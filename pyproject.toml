@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cost-average-out"
 version = "0.0.0"
@@ -21,11 +25,21 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.5",
   "mypy>=1.10",
+  "types-PyYAML>=6.0",
 ]
 
 [tool.ruff]
 line-length = 88
 src = ["src", "tests"]
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
 [tool.pytest.ini_options]
+addopts = "-ra"
 testpaths = ["tests"]

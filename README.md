@@ -28,15 +28,31 @@ mode first and review every configuration value before enabling live trading.
 
 ## Quick Start
 
+Requires Python 3.11 or newer.
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 cp .env.example .env
 cp config.example.yaml config.yaml
 cost-average-out validate-config --config config.yaml
-cost-average-out plan --config config.yaml
 ```
+
+Config validation is offline: it parses and validates the YAML file without
+loading credentials, contacting an exchange, or submitting orders. The `plan`
+and live execution workflows are not implemented yet.
 
 Live trading should remain disabled until configuration, exchange permissions,
 and reconciliation behavior are verified.
+
+## Development Checks
+
+```bash
+pytest
+ruff check .
+mypy
+```
 
 ## Repository Policy
 

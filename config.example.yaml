@@ -1,0 +1,28 @@
+config_version: 1
+exchange: kraken
+quote_currency: EUR
+timezone: Europe/Amsterdam
+database_path: ./data/cost_average_out.sqlite3
+
+cost_average_out:
+  start_date: "2030-01-01"
+  end_date: null
+  interval: weekly
+  percentage: 0.01
+  percentage_basis: current_balance
+
+symbols:
+  - BTC/EUR
+  - ETH/EUR
+
+safety:
+  live_trading_enabled: false
+  kill_switch: false
+  require_first_live_sell_confirmation: true
+  missed_cycle_policy: require_manual_approval
+  max_sell_value_per_cycle: 500
+  min_remaining_value_per_symbol: 100
+  max_spread_bps: 75
+
+notifications:
+  provider: none

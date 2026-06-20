@@ -117,6 +117,7 @@ class AppConfig(StrictModel):
 
         self.exchange = self.exchange.strip().lower()
         self.quote_currency = expected_quote
+        self.timezone = self.timezone.strip()
         self.symbols = normalized
         return self
 

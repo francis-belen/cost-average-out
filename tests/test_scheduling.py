@@ -8,7 +8,6 @@ from cost_average_out.config import AppConfig
 from cost_average_out.scheduling import CycleStatus, evaluate_cycle
 from tests.test_config import valid_config_data
 
-
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 
 
@@ -90,7 +89,7 @@ def test_schedule_preserves_local_midnight_across_dst() -> None:
     config = make_config(start_date="2030-03-24", interval="weekly")
 
     before_dst = evaluate_cycle(config, local_datetime("2030-03-24T12:00:00"))
-    after_dst = evaluate_cycle(config, local_datetime("2030-03-31T12:00:00"))
+    after_dst = evaluate_cycle(config, local_datetime("2030-04-07T12:00:00"))
 
     assert before_dst.scheduled_at.hour == 0
     assert before_dst.scheduled_at.utcoffset().total_seconds() == 3600

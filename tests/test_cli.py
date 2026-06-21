@@ -100,3 +100,7 @@ def test_schedule_status_rejects_naive_at_value() -> None:
             "--at",
             "2030-01-01T12:00:00",
         ],
+    )
+
+    assert result.exit_code == 1
+    assert "must include a UTC offset" in result.stderr

@@ -37,6 +37,7 @@ python -m pip install -e ".[dev]"
 cp .env.example .env
 cp config.example.yaml config.yaml
 cost-average-out validate-config --config config.yaml
+cost-average-out schedule-status --config config.yaml
 ```
 
 Config validation is offline: it parses and validates the YAML file without

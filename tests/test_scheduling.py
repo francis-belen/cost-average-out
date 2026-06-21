@@ -92,9 +92,13 @@ def test_schedule_preserves_local_midnight_across_dst() -> None:
     after_dst = evaluate_cycle(config, local_datetime("2030-04-07T12:00:00"))
 
     assert before_dst.scheduled_at.hour == 0
-    assert before_dst.scheduled_at.utcoffset().total_seconds() == 3600
     assert after_dst.scheduled_at.hour == 0
-    assert after_dst.scheduled_at.utcoffset().total_seconds() == 7200
+    before_offset = before_dst.scheduled_at.utcoffset()
+    after_offset = after_dst.scheduled_at.utcoffset()
+    assert before_offset is not None
+    assert after_offset is not None
+    assert before_offset.total_seconds() == 3600
+    assert after_offset.total_seconds() == 7200
 
 
 def test_end_date_prevents_new_cycles() -> None:

@@ -38,6 +38,8 @@ cp .env.example .env
 cp config.example.yaml config.yaml
 cost-average-out validate-config --config config.yaml
 cost-average-out schedule-status --config config.yaml
+cost-average-out init-ledger --config config.yaml
+cost-average-out status --config config.yaml
 ```
 
 Config validation is offline: it parses and validates the YAML file without

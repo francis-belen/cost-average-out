@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
 from typer.testing import CliRunner
 
 from cost_average_out.cli import app
+from tests.test_config import valid_config_data
 
 runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -104,3 +106,50 @@ def test_schedule_status_rejects_naive_at_value() -> None:
 
     assert result.exit_code == 1
     assert "must include a UTC offset" in result.stderr
+
+
+def write_config(tmp_path: Path) -> tuple[Path, Path]:
+    database = tmp_path / "ledger.sqlite3"
+    config = tmp_path / "config.yaml"
+    data = valid_config_data()
+    data["database_path"] = str(database)
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return config, database
+
+
+def test_init_ledger_is_repeatable_and_status_is_ledger_backed(
+    tmp_path: Path,
+) -> None:
+    config, database = write_config(tmp_path)
+
+    first_init = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    second_init = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    status = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert first_init.exit_code == 0
+    assert second_init.exit_code == 0
+    assert database.is_file()
+    assert f"Ledger ready: {database}" in first_init.stdout
+    assert status.exit_code == 0
+    assert "Cycles: 0" in status.stdout
+    assert "Planned orders: 0" in status.stdout
+    assert "Unresolved exchange orders: 0" in status.stdout
+    assert "Last cycle: none" in status.stdout
+
+
+def test_status_reports_uninitialized_ledger(tmp_path: Path) -> None:
+    config, database = write_config(tmp_path)
+
+    result = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert not database.exists()
+    assert "Status unavailable: ledger does not exist" in result.stderr
+
+
+def test_help_lists_ledger_commands() -> None:
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "init-ledger" in result.stdout
+    assert "status" in result.stdout

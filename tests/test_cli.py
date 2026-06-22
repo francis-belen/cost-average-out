@@ -3,10 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from pytest import MonkeyPatch
 from typer.testing import CliRunner
 
 from cost_average_out.cli import app
 from tests.test_config import valid_config_data
+from tests.test_reconciliation import FakeExchangeAdapter
 
 runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -153,3 +155,30 @@ def test_help_lists_ledger_commands() -> None:
     assert result.exit_code == 0
     assert "init-ledger" in result.stdout
     assert "status" in result.stdout
+
+
+def test_reconcile_command_uses_read_only_adapter(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(app, ["reconcile", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "Balances recorded: 2" in result.stdout
+    assert "Markets validated: 2" in result.stdout
+    assert "Execution blocked: no" in result.stdout
+
+
+def test_help_lists_reconcile_command() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert "reconcile" in result.stdout
+
+    assert result.exit_code == 0

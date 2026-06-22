@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 class LedgerError(RuntimeError):
@@ -55,6 +55,40 @@ class PlannedOrderInput:
     estimated_quote_value: Decimal
     status: PlannedOrderState = PlannedOrderState.PLANNED
     reason: str | None = None
+
+@dataclass(frozen=True)
+class BalanceInput:
+    asset: str
+    available: Decimal
+    total: Decimal
+
+
+@dataclass(frozen=True)
+class ReconciledOrderInput:
+    exchange_order_id: str
+    client_order_id: str | None
+    status: str
+    raw: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class ReconciledFillInput:
+    exchange_fill_id: str
+    exchange_order_id: str
+    symbol: str
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal | None
+    fee_currency: str | None
+    filled_at: datetime
+    raw: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class ReconciliationWriteResult:
+    balance_count: int
+    matched_order_count: int
+    recorded_fill_count: int
 
 
 @dataclass(frozen=True)
@@ -330,6 +364,208 @@ class Ledger:
                 {"status": status.value},
                 now,
             )
+
+    def register_exchange_order(
+        self,
+        cycle_id: str,
+        symbol: str,
+        exchange: str,
+        client_order_id: str,
+        status: str = "submitting",
+        exchange_order_id: str | None = None,
+    ) -> int:
+        """Register an app-created order for later reconciliation."""
+
+        now = _utc_now()
+        try:
+            with self._connection() as connection, connection:
+                planned_order = connection.execute(
+                    """
+                    SELECT planned_orders.id
+                    FROM planned_orders
+                    JOIN cycles ON cycles.id = planned_orders.cycle_id
+                    WHERE cycles.cycle_id = ? AND planned_orders.symbol = ?
+                    """,
+                    (cycle_id, symbol),
+                ).fetchone()
+                if planned_order is None:
+                    raise LedgerError(
+                        f"planned order not found for cycle {cycle_id}: {symbol}"
+                    )
+                cursor = connection.execute(
+                    """
+                    INSERT INTO exchange_orders(
+                        planned_order_id, exchange, exchange_order_id,
+                        client_order_id, status, created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(planned_order[0]),
+                        exchange,
+                        exchange_order_id,
+                        client_order_id,
+                        status,
+                        now,
+                        now,
+                    ),
+                )
+                row_id = cursor.lastrowid
+                assert row_id is not None
+                return row_id
+        except sqlite3.IntegrityError as exc:
+            raise LedgerConflictError(
+                f"exchange order already exists: {client_order_id}"
+            ) from exc
+
+    def record_reconciliation(
+        self,
+        exchange: str,
+        observed_at: datetime,
+        balances: Sequence[BalanceInput],
+        orders: Sequence[ReconciledOrderInput],
+        fills: Sequence[ReconciledFillInput],
+    ) -> ReconciliationWriteResult:
+        """Atomically persist balances and reconcile known app-created orders."""
+
+        self._require_aware(observed_at)
+        observed = observed_at.astimezone(UTC).isoformat()
+        matched_order_ids: set[int] = set()
+        recorded_fill_count = 0
+        with self._connection() as connection, connection:
+            for balance in balances:
+                connection.execute(
+                    """
+                    INSERT INTO balances(
+                        exchange, asset, available, total, observed_at, source
+                    ) VALUES(?, ?, ?, ?, ?, 'reconciliation')
+                    ON CONFLICT(exchange, asset, observed_at) DO UPDATE SET
+                        available = excluded.available,
+                        total = excluded.total,
+                        source = excluded.source
+                    """,
+                    (
+                        exchange,
+                        balance.asset,
+                        str(balance.available),
+                        str(balance.total),
+                        observed,
+                    ),
+                )
+
+            for order in orders:
+                local_order = self._find_exchange_order(
+                    connection,
+                    exchange,
+                    order.exchange_order_id,
+                    order.client_order_id,
+                )
+                if local_order is None:
+                    continue
+                local_order_id = int(local_order[0])
+                connection.execute(
+                    """
+                    UPDATE exchange_orders
+                    SET exchange_order_id = ?, status = ?, raw_json = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        order.exchange_order_id,
+                        order.status,
+                        json.dumps(order.raw, sort_keys=True, default=str),
+                        observed,
+                        local_order_id,
+                    ),
+                )
+                matched_order_ids.add(local_order_id)
+
+            for fill in fills:
+                local_order = connection.execute(
+                    """
+                    SELECT id FROM exchange_orders
+                    WHERE exchange = ? AND exchange_order_id = ?
+                    """,
+                    (exchange, fill.exchange_order_id),
+                ).fetchone()
+                if local_order is None:
+                    continue
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO fills(
+                        exchange_order_id, exchange_fill_id, symbol, quantity,
+                        price, fee, fee_currency, filled_at, raw_json
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(local_order[0]),
+                        fill.exchange_fill_id,
+                        fill.symbol,
+                        str(fill.quantity),
+                        str(fill.price),
+                        str(fill.fee) if fill.fee is not None else None,
+                        fill.fee_currency,
+                        fill.filled_at.astimezone(UTC).isoformat(),
+                        json.dumps(fill.raw, sort_keys=True, default=str),
+                    ),
+                )
+                recorded_fill_count += max(cursor.rowcount, 0)
+
+            connection.execute(
+                """
+                INSERT INTO ledger_events(
+                    cycle_id, event_type, payload_json, created_at
+                ) VALUES(NULL, 'reconciliation_completed', ?, ?)
+                """,
+                (
+                    json.dumps(
+                        {
+                            "balance_count": len(balances),
+                            "matched_order_count": len(matched_order_ids),
+                            "recorded_fill_count": recorded_fill_count,
+                        },
+                        sort_keys=True,
+                    ),
+                    observed,
+                ),
+            )
+
+        return ReconciliationWriteResult(
+            balance_count=len(balances),
+            matched_order_count=len(matched_order_ids),
+            recorded_fill_count=recorded_fill_count,
+        )
+
+    def has_unresolved_exchange_orders(self) -> bool:
+        """Return whether local app-created orders require resolution."""
+
+        return self.summary().unresolved_exchange_order_count > 0
+
+    @staticmethod
+    def _find_exchange_order(
+        connection: sqlite3.Connection,
+        exchange: str,
+        exchange_order_id: str,
+        client_order_id: str | None,
+    ) -> sqlite3.Row | tuple[Any, ...] | None:
+        if client_order_id:
+            row = connection.execute(
+                """
+                SELECT id FROM exchange_orders
+                WHERE exchange = ? AND (
+                    exchange_order_id = ? OR client_order_id = ?
+                )
+                """,
+                (exchange, exchange_order_id, client_order_id),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                """
+                SELECT id FROM exchange_orders
+                WHERE exchange = ? AND exchange_order_id = ?
+                """,
+                (exchange, exchange_order_id),
+            ).fetchone()
+        return cast(tuple[Any, ...] | None, row)
 
     def summary(self) -> LedgerSummary:
         """Return a read-only status summary from the initialized ledger."""

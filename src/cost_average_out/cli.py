@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from cost_average_out.config import ConfigError, load_config
+from cost_average_out.exchange import ExchangeError, create_exchange_adapter
 from cost_average_out.ledger import Ledger, LedgerError
+from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
 app = typer.Typer(help="Cost Average Out CLI.")
@@ -160,3 +162,47 @@ def plan(config: str = "config.yaml") -> None:
 def run_once(config: str = "config.yaml") -> None:
     """Run one timer-friendly execution cycle."""
     typer.echo(f"run-once is not implemented yet: {config}")
+
+@app.command()
+def reconcile(
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to the YAML configuration file.",
+            dir_okay=False,
+        ),
+    ] = Path("config.yaml"),
+    lookback_days: Annotated[
+        int,
+        typer.Option(
+            "--lookback-days",
+            min=1,
+            help="Number of days of closed orders and fills to fetch.",
+        ),
+    ] = 7,
+) -> None:
+    """Reconcile read-only exchange state into the local ledger."""
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.summary()
+        adapter = create_exchange_adapter(validated.exchange)
+        result = reconcile_exchange(
+            validated,
+            ledger,
+            adapter,
+            lookback=timedelta(days=lookback_days),
+        )
+    except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Reconciliation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Balances recorded: {result.balance_count}")
+    typer.echo(f"Markets validated: {result.market_count}")
+    typer.echo(f"Open orders: {result.open_order_count}")
+    typer.echo(f"Recent orders: {result.recent_order_count}")
+    typer.echo(f"Recent fills: {result.recent_fill_count}")
+    typer.echo(f"Unresolved app orders: {result.unresolved_app_order_count}")
+    typer.echo(f"Execution blocked: {'yes' if result.execution_blocked else 'no'}")

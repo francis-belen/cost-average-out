@@ -2,14 +2,49 @@
 
 ## Scope
 
-Start with one exchange adapter and keep the interface small:
+The first concrete adapter is Kraken through CCXT. Phase 3 is strictly
+read-only and exposes:
 
 - fetch balances,
 - fetch market metadata,
 - fetch open orders,
 - fetch recent closed orders and fills,
-- create spot market or limit orders,
-- cancel orders if the execution policy requires it.
+- normalize exchange order states.
+
+The adapter interface is dependency-injected so unit and integration tests can
+use a fake exchange without network access or credentials.
+
+## Credentials
+
+Set credentials outside the YAML config:
+
+```bash
+export COST_AVERAGE_OUT_EXCHANGE_API_KEY=...
+export COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
+```
+
+The API key requires balance, order, and trade-history read permissions. Do not
+grant withdrawal permission. Order-creation permission is not needed for this
+read-only reconciliation phase.
+
+## Reconciliation
+
+Initialize the ledger, then reconcile:
+
+```bash
+cost-average-out init-ledger --config config.yaml
+cost-average-out reconcile --config config.yaml --lookback-days 7
+```
+
+Reconciliation validates every allowlisted symbol before private account reads,
+stores available and total balances, updates known app-created orders, and
+records fills idempotently. It never creates, cancels, or modifies an exchange
+order.
+
+An open, partial, unknown, or locally submitting app-created order blocks later
+execution. Orders not created by this app are visible but do not trigger this
+specific block. An app-created order found remotely without a matching local
+record also blocks execution and requires investigation.
 
 ## Safety Requirements
 
@@ -17,14 +52,3 @@ Start with one exchange adapter and keep the interface small:
 - The adapter must normalize exchange order statuses.
 - Timeouts must produce an unknown state that requires reconciliation.
 - Real exchange integration tests must be opt-in.
-
-## Suggested Interface
-
-```text
-fetch_balances()
-fetch_markets(symbols)
-fetch_open_orders(symbols)
-fetch_recent_orders(symbols, since)
-create_order(symbol, side, amount, order_type, price=None)
-fetch_order(order_id, symbol)
-```

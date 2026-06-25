@@ -24,9 +24,9 @@ export COST_AVERAGE_OUT_EXCHANGE_API_KEY=...
 export COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
 ```
 
-The API key requires balance, order, and trade-history read permissions. Do not
-grant withdrawal permission. Order-creation permission is not needed for this
-read-only reconciliation and planning phases.
+The API key requires balance, order, and trade-history read permissions. Live
+execution additionally requires spot order-creation permission. Do not grant
+withdrawal permission.
 
 ## Initial Balance Snapshot
 
@@ -67,3 +67,15 @@ record also blocks execution and requires investigation.
 - The adapter must normalize exchange order statuses.
 - Timeouts must produce an unknown state that requires reconciliation.
 - Real exchange integration tests must be opt-in.
+
+
+## Live Submission
+
+The adapter submits market sell orders only from `run-once --live` after config,
+schedule, reconciliation, planner, and CLI confirmation gates pass. The app sends
+a deterministic client order ID with the `cao-` prefix and immediately records
+the local exchange-order row after each submit response.
+
+If the exchange call times out, the app records the order as
+`unknown_requires_reconciliation`, marks the cycle the same way, and exits
+without retrying blindly. Run `reconcile` before any further live attempt.

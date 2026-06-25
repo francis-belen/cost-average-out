@@ -69,3 +69,24 @@ cost-average-out run-once --dry-run --persist-simulation --config config.yaml
 
 The dry-run output includes planned quantities, estimated quote values,
 skip/block reasons, and a notification preview.
+
+
+## Live Run
+
+Live execution requires both config opt-in and an explicit CLI flag:
+
+```bash
+cost-average-out run-once --live --config config.yaml
+```
+
+If `require_first_live_sell_confirmation` is true and no completed live cycle
+exists yet, add the explicit confirmation flag for the first live sell:
+
+```bash
+cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+```
+
+Live execution is blocked when `live_trading_enabled` is false, `kill_switch` is
+true, a missed cycle requires manual approval, the plan has block reasons, or any
+app-created exchange order is unresolved. Submission timeouts are persisted as
+`unknown_requires_reconciliation`; reconcile before retrying.

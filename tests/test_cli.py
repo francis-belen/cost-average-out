@@ -207,13 +207,13 @@ def test_plan_command_outputs_safety_decisions(
     assert "estimated_value=250" in result.stdout
 
 
-def test_run_once_requires_dry_run_flag(tmp_path: Path) -> None:
+def test_run_once_requires_mode_flag(tmp_path: Path) -> None:
     config, _ = write_config(tmp_path)
 
     result = runner.invoke(app, ["run-once", "--config", str(config)])
 
     assert result.exit_code == 1
-    assert "Live run-once is not implemented yet; use --dry-run." in result.stderr
+    assert "Choose exactly one of --dry-run or --live." in result.stderr
 
 
 def test_run_once_dry_run_writes_no_exchange_orders_by_default(

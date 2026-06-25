@@ -36,3 +36,16 @@ Unsafe items are marked `skipped` or `blocked` with an explicit reason.
 Dry-run execution never submits exchange orders. It only fetches read-only
 exchange state and, when explicitly requested with `--persist-simulation`, writes
 a local simulation cycle and planned orders to SQLite.
+
+
+## Live Execution
+
+Live execution requires `run-once --live` plus `live_trading_enabled: true`. The
+kill switch blocks all live orders regardless of CLI flags. If first-live-sell
+confirmation is enabled, the first live run must include
+`--confirm-first-live-sell`.
+
+The app records exchange order IDs immediately after submission. If submission
+times out, it records `unknown_requires_reconciliation` and does not retry the
+order automatically. Existing partial, open, submitting, or unknown app-created
+orders block further live execution until reconciliation resolves them.

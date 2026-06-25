@@ -27,6 +27,7 @@ class FakeCcxtClient:
         self.closed_orders: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.trades: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.tickers: dict[str, Mapping[str, Any]] = {}
+        self.created_orders: list[Mapping[str, Any]] = []
 
     def load_markets(self) -> Mapping[str, Mapping[str, Any]]:
         return self.markets
@@ -40,6 +41,27 @@ class FakeCcxtClient:
         params: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self.tickers[symbol]
+
+    def create_order(
+        self,
+        symbol: str,
+        type: str,
+        side: str,
+        amount: object,
+        price: object | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        order = {
+            "id": "created-order-1",
+            "clientOrderId": (params or {}).get("clientOrderId"),
+            "symbol": symbol,
+            "status": "open",
+            "amount": amount,
+            "filled": 0,
+            "timestamp": 1_893_456_000_000,
+        }
+        self.created_orders.append(order)
+        return order
 
     def fetch_open_orders(
         self,

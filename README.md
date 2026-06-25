@@ -52,7 +52,11 @@ loading credentials, contacting an exchange, or submitting orders.
 `snapshot-balances`, `plan`, and `run-once --dry-run` are read-only against the
 exchange. `plan` prints the next sell quantities and safety decisions.
 `run-once --dry-run` evaluates the timer cycle and can optionally persist a local
-simulation with `--persist-simulation`. Live execution is not implemented yet.
+simulation with `--persist-simulation`.
+
+Live execution is available only through `run-once --live` and is blocked unless
+`live_trading_enabled` is true, the kill switch is false, and any configured
+first-live-sell confirmation is supplied.
 
 Live trading should remain disabled until configuration, exchange permissions,
 and reconciliation behavior are verified.

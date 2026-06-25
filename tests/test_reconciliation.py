@@ -59,6 +59,25 @@ class FakeExchangeAdapter:
     def fetch_tickers(self, symbols: Sequence[str]) -> Sequence[Ticker]:
         return self.tickers
 
+    def submit_market_sell_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        client_order_id: str,
+    ) -> Order:
+        order = Order(
+            exchange_order_id=f"order-{len(self.recent_orders) + 1}",
+            client_order_id=client_order_id,
+            symbol=symbol,
+            status=OrderStatus.OPEN,
+            amount=quantity,
+            filled=Decimal("0"),
+            timestamp=NOW,
+            raw={"id": f"order-{len(self.recent_orders) + 1}"},
+        )
+        self.recent_orders = [*self.recent_orders, order]
+        return order
+
     def fetch_open_orders(self, symbols: Sequence[str]) -> Sequence[Order]:
         return self.open_orders
 

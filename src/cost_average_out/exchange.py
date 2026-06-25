@@ -25,6 +25,10 @@ class ExchangeConfigurationError(ExchangeError):
     """Raised when exchange credentials or adapter selection are invalid."""
 
 
+class ExchangeTimeoutError(ExchangeError):
+    """Raised when exchange submission outcome is unknown after a timeout."""
+
+
 class UnsupportedSymbolError(ExchangeError):
     """Raised when configured symbols are unavailable for spot trading."""
 
@@ -118,6 +122,13 @@ class ExchangeAdapter(Protocol):
         since: datetime,
     ) -> Sequence[Fill]: ...
 
+    def submit_market_sell_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        client_order_id: str,
+    ) -> Order: ...
+
 
 class CcxtClient(Protocol):
     markets: Mapping[str, Mapping[str, Any]]
@@ -155,6 +166,16 @@ class CcxtClient(Protocol):
         limit: int | None = None,
         params: Mapping[str, Any] | None = None,
     ) -> Sequence[Mapping[str, Any]]: ...
+
+    def create_order(
+        self,
+        symbol: str,
+        type: str,
+        side: str,
+        amount: object,
+        price: object | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]: ...
 
 
 class KrakenExchangeAdapter:
@@ -260,6 +281,29 @@ class KrakenExchangeAdapter:
         except Exception as exc:
             raise ExchangeError(f"Kraken fill fetch failed: {exc}") from exc
         return _deduplicate(fills, key=lambda fill: fill.exchange_fill_id)
+
+    def submit_market_sell_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        client_order_id: str,
+    ) -> Order:
+        try:
+            raw = self._client.create_order(
+                symbol,
+                "market",
+                "sell",
+                str(quantity),
+                None,
+                {"clientOrderId": client_order_id},
+            )
+        except ccxt.RequestTimeout as exc:
+            raise ExchangeTimeoutError(
+                "Kraken order submission timed out; reconciliation required"
+            ) from exc
+        except Exception as exc:
+            raise ExchangeError(f"Kraken order submission failed: {exc}") from exc
+        return _normalize_order(raw, symbol)
 
     def _fetch_orders(
         self,

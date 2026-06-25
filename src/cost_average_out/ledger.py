@@ -375,6 +375,31 @@ class Ledger:
                 now,
             )
 
+    def update_planned_order_status(
+        self,
+        cycle_id: str,
+        symbol: str,
+        status: PlannedOrderState,
+        reason: str | None = None,
+    ) -> None:
+        """Update a planned order state by public cycle ID and symbol."""
+
+        now = _utc_now()
+        with self._connection() as connection, connection:
+            cursor = connection.execute(
+                """
+                UPDATE planned_orders
+                SET status = ?, reason = COALESCE(?, reason), updated_at = ?
+                WHERE symbol = ?
+                  AND cycle_id = (SELECT id FROM cycles WHERE cycle_id = ?)
+                """,
+                (status.value, reason, now, symbol, cycle_id),
+            )
+            if cursor.rowcount != 1:
+                raise LedgerError(
+                    f"planned order not found for cycle {cycle_id}: {symbol}"
+                )
+
     def register_exchange_order(
         self,
         cycle_id: str,
@@ -383,6 +408,7 @@ class Ledger:
         client_order_id: str,
         status: str = "submitting",
         exchange_order_id: str | None = None,
+        raw: Mapping[str, Any] | None = None,
     ) -> int:
         """Register an app-created order for later reconciliation."""
 
@@ -406,8 +432,8 @@ class Ledger:
                     """
                     INSERT INTO exchange_orders(
                         planned_order_id, exchange, exchange_order_id,
-                        client_order_id, status, created_at, updated_at
-                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                        client_order_id, status, raw_json, created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(planned_order[0]),
@@ -415,6 +441,9 @@ class Ledger:
                         exchange_order_id,
                         client_order_id,
                         status,
+                        json.dumps(raw, sort_keys=True, default=str)
+                        if raw is not None
+                        else None,
                         now,
                         now,
                     ),

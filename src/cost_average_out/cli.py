@@ -7,8 +7,18 @@ from typing import Annotated
 import typer
 
 from cost_average_out.config import ConfigError, load_config
-from cost_average_out.cycle import PlanPreview, dry_run_once, preview_plan
-from cost_average_out.exchange import ExchangeError, create_exchange_adapter
+from cost_average_out.cycle import (
+    LiveExecutionBlockedError,
+    PlanPreview,
+    dry_run_once,
+    live_run_once,
+    preview_plan,
+)
+from cost_average_out.exchange import (
+    ExchangeError,
+    ExchangeTimeoutError,
+    create_exchange_adapter,
+)
 from cost_average_out.ledger import BalanceInput, Ledger, LedgerError
 from cost_average_out.planner import SellPlanItem
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
@@ -248,6 +258,20 @@ def run_once(
             help="Evaluate and preview a cycle without submitting exchange orders.",
         ),
     ] = False,
+    live: Annotated[
+        bool,
+        typer.Option(
+            "--live",
+            help="Submit live exchange orders if all safety gates pass.",
+        ),
+    ] = False,
+    confirm_first_live_sell: Annotated[
+        bool,
+        typer.Option(
+            "--confirm-first-live-sell",
+            help="Confirm the first live sell when config requires it.",
+        ),
+    ] = False,
     persist_simulation: Annotated[
         bool,
         typer.Option(
@@ -264,8 +288,11 @@ def run_once(
     ] = None,
 ) -> None:
     """Run one timer-friendly execution cycle."""
-    if not dry_run:
-        typer.echo("Live run-once is not implemented yet; use --dry-run.", err=True)
+    if dry_run == live:
+        typer.echo("Choose exactly one of --dry-run or --live.", err=True)
+        raise typer.Exit(code=1)
+    if live and persist_simulation:
+        typer.echo("--persist-simulation is only valid with --dry-run.", err=True)
         raise typer.Exit(code=1)
 
     try:
@@ -273,25 +300,53 @@ def run_once(
         ledger = Ledger(validated.database_path.expanduser())
         ledger.summary()
         adapter = create_exchange_adapter(validated.exchange)
-        result = dry_run_once(
-            validated,
-            ledger,
-            adapter,
-            now=_parse_instant(at) if at is not None else datetime.now(UTC),
-            persist_simulation=persist_simulation,
-        )
+        evaluated_at = _parse_instant(at) if at is not None else datetime.now(UTC)
+        if dry_run:
+            result = dry_run_once(
+                validated,
+                ledger,
+                adapter,
+                now=evaluated_at,
+                persist_simulation=persist_simulation,
+            )
+        else:
+            live_result = live_run_once(
+                validated,
+                ledger,
+                adapter,
+                now=evaluated_at,
+                confirm_first_live_sell=confirm_first_live_sell,
+            )
+    except LiveExecutionBlockedError as exc:
+        typer.echo(f"Live execution blocked: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except ExchangeTimeoutError as exc:
+        typer.echo(f"Live execution timeout: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
-        typer.echo(f"Dry run failed: {exc}", err=True)
+        label = "Dry run" if dry_run else "Live run"
+        typer.echo(f"{label} failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Dry run cycle status: {result.evaluation.status.value}")
-    typer.echo(f"Scheduled at: {result.evaluation.scheduled_at.isoformat()}")
-    typer.echo(f"Cycle ID: {result.evaluation.cycle_id}")
-    if result.persisted_cycle_id is not None:
-        typer.echo(f"Simulation persisted: {result.persisted_cycle_id}")
-    if result.preview is not None:
-        _echo_plan_preview(result.preview)
-    typer.echo(f"Notification preview: {result.notification_preview}")
+    if dry_run:
+        typer.echo(f"Dry run cycle status: {result.evaluation.status.value}")
+        typer.echo(f"Scheduled at: {result.evaluation.scheduled_at.isoformat()}")
+        typer.echo(f"Cycle ID: {result.evaluation.cycle_id}")
+        if result.persisted_cycle_id is not None:
+            typer.echo(f"Simulation persisted: {result.persisted_cycle_id}")
+        if result.preview is not None:
+            _echo_plan_preview(result.preview)
+        typer.echo(f"Notification preview: {result.notification_preview}")
+    else:
+        typer.echo(f"Live cycle status: {live_result.evaluation.status.value}")
+        typer.echo(f"Scheduled at: {live_result.evaluation.scheduled_at.isoformat()}")
+        typer.echo(f"Cycle ID: {live_result.evaluation.cycle_id}")
+        typer.echo(f"Submitted orders: {live_result.submitted_order_count}")
+        typer.echo(
+            "Post-submit reconciliation blocked: "
+            f"{'yes' if live_result.reconciliation.execution_blocked else 'no'}"
+        )
+        typer.echo(f"Notification preview: {live_result.notification_preview}")
 
 
 def _echo_plan_preview(preview: PlanPreview) -> None:

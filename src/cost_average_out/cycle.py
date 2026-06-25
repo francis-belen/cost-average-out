@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 from cost_average_out.config import AppConfig, PercentageBasis
 from cost_average_out.exchange import (
     APP_CLIENT_ORDER_PREFIX,
     Balance,
     ExchangeAdapter,
+    ExchangeError,
     ExchangeTimeoutError,
     OrderStatus,
 )
@@ -235,6 +237,15 @@ def live_run_once(
                 CycleState.UNKNOWN_REQUIRES_RECONCILIATION,
             )
             raise
+        except ExchangeError as exc:
+            ledger.update_planned_order_status(
+                evaluation.cycle_id,
+                item.symbol,
+                PlannedOrderState.FAILED,
+                f"submission rejected: {exc}",
+            )
+            ledger.set_cycle_status(evaluation.cycle_id, CycleState.FAILED)
+            raise
 
         ledger.register_exchange_order(
             evaluation.cycle_id,
@@ -291,8 +302,8 @@ def _planned_order_input(item: SellPlanItem) -> PlannedOrderInput:
 
 
 def _client_order_id(cycle_id: str, symbol: str) -> str:
-    suffix = symbol.lower().replace("/", "-")
-    return f"{APP_CLIENT_ORDER_PREFIX}{cycle_id}-{suffix}"[:64]
+    digest = sha256(f"{cycle_id}|{symbol}".encode()).hexdigest()[:14]
+    return f"{APP_CLIENT_ORDER_PREFIX}{digest}"
 
 
 def _exchange_order_status(status: OrderStatus) -> str:

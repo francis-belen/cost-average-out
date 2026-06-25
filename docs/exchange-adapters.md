@@ -73,8 +73,8 @@ record also blocks execution and requires investigation.
 
 The adapter submits market sell orders only from `run-once --live` after config,
 schedule, reconciliation, planner, and CLI confirmation gates pass. The app sends
-a deterministic client order ID with the `cao-` prefix and immediately records
-the local exchange-order row after each submit response.
+a deterministic Kraken-compatible client order ID with the `cao-` prefix
+and immediately records the local exchange-order row after each submit response.
 
 If the exchange call times out, the app records the order as
 `unknown_requires_reconciliation`, marks the cycle the same way, and exits

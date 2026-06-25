@@ -9,13 +9,24 @@ from pathlib import Path
 import pytest
 
 from cost_average_out.config import AppConfig
-from cost_average_out.cycle import LiveExecutionBlockedError, live_run_once
-from cost_average_out.exchange import ExchangeTimeoutError, Order, OrderStatus
+from cost_average_out.cycle import (
+    LiveExecutionBlockedError,
+    _client_order_id,
+    live_run_once,
+)
+from cost_average_out.exchange import (
+    APP_CLIENT_ORDER_PREFIX,
+    ExchangeError,
+    ExchangeTimeoutError,
+    Order,
+    OrderStatus,
+)
 from cost_average_out.ledger import (
     CycleState,
     Ledger,
     LedgerConflictError,
     PlannedOrderInput,
+    PlannedOrderState,
 )
 from cost_average_out.scheduling import evaluate_cycle
 from tests.test_config import valid_config_data
@@ -48,6 +59,16 @@ def scalar(path: Path, query: str) -> object:
         row = connection.execute(query).fetchone()
         assert row is not None
         return row[0]
+
+
+def test_client_order_id_is_kraken_compatible() -> None:
+    client_id = _client_order_id("cao-2026-06-25-51d7ee183f3d40d8", "TAO/EUR")
+
+    assert client_id.startswith(APP_CLIENT_ORDER_PREFIX)
+    assert len(client_id) <= 18
+    assert _client_order_id("cao-2026-06-25-51d7ee183f3d40d8", "TAO/EUR") == client_id
+    assert _client_order_id("cao-2026-06-25-51d7ee183f3d40d8", "SUI/EUR") != client_id
+    int(client_id.removeprefix(APP_CLIENT_ORDER_PREFIX), 16)
 
 
 class FilledExchangeAdapter(FakeExchangeAdapter):
@@ -84,6 +105,16 @@ class TimeoutExchangeAdapter(FakeExchangeAdapter):
         client_order_id: str,
     ) -> Order:
         raise ExchangeTimeoutError("simulated timeout")
+
+
+class RejectingExchangeAdapter(FakeExchangeAdapter):
+    def submit_market_sell_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        client_order_id: str,
+    ) -> Order:
+        raise ExchangeError("simulated rejection")
 
 
 def test_live_execution_requires_config_opt_in(tmp_path: Path) -> None:
@@ -146,6 +177,19 @@ def test_submission_timeout_records_unknown_state(tmp_path: Path) -> None:
     )
     assert scalar(ledger.path, "SELECT status FROM exchange_orders") == (
         "unknown_requires_reconciliation"
+    )
+
+
+def test_submission_rejection_marks_cycle_failed(tmp_path: Path) -> None:
+    ledger = initialized_ledger(tmp_path)
+
+    with pytest.raises(ExchangeError, match="simulated rejection"):
+        live_run_once(config(), ledger, RejectingExchangeAdapter(), now=NOW)
+
+    assert scalar(ledger.path, "SELECT status FROM cycles") == CycleState.FAILED.value
+    assert scalar(ledger.path, "SELECT COUNT(*) FROM exchange_orders") == 0
+    assert scalar(ledger.path, "SELECT status FROM planned_orders") == (
+        PlannedOrderState.FAILED.value
     )
 
 

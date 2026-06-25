@@ -25,6 +25,32 @@ run-once
   exit
 ```
 
+## MVP Validation Checklist
+
+Run this sequence after setup, upgrades, or before a release tag:
+
+```bash
+cost-average-out validate-config --config config.yaml
+cost-average-out status --config config.yaml
+cost-average-out reconcile --config config.yaml
+cost-average-out snapshot-balances --config config.yaml
+cost-average-out plan --config config.yaml
+cost-average-out run-once --dry-run --config config.yaml
+cost-average-out backfill-prices --config config.yaml --days 7
+cost-average-out portfolio-history --config config.yaml --output history.json
+```
+
+Check that:
+
+- live trading is disabled unless a live test is intentional,
+- unresolved exchange orders are zero,
+- `plan` has no unexpected `blocked` reasons,
+- `run-once --dry-run` submits no live orders,
+- `portfolio-history` writes valid JSON,
+- any generated temporary export file is removed or stored intentionally.
+
+This checklist is read-only against the exchange except for local SQLite writes.
+
 ## Backups
 
 Back up the SQLite database before upgrades and at least daily during live use.

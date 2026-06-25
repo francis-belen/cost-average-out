@@ -65,6 +65,26 @@ first-live-sell confirmation is supplied.
 Live trading should remain disabled until configuration, exchange permissions,
 and reconciliation behavior are verified.
 
+## MVP Validation Checklist
+
+Before tagging or enabling live trading, run the safe release-gate workflow:
+
+```bash
+cost-average-out validate-config --config config.yaml
+cost-average-out status --config config.yaml
+cost-average-out reconcile --config config.yaml
+cost-average-out snapshot-balances --config config.yaml
+cost-average-out plan --config config.yaml
+cost-average-out run-once --dry-run --config config.yaml
+cost-average-out backfill-prices --config config.yaml --days 7
+cost-average-out portfolio-history --config config.yaml --output history.json
+```
+
+Expected results: config is valid, unresolved exchange orders are zero, read-only
+exchange calls succeed, dry-run submits no orders, and portfolio history exports
+valid JSON. Do not run `run-once --live` until dry-run behavior, API permissions,
+and configured sell sizes have been reviewed intentionally.
+
 ## Development Checks
 
 ```bash

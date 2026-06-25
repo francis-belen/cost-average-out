@@ -25,4 +25,6 @@ safety:
   max_spread_bps: 75
 
 notifications:
+  # Supported: none, webhook. Webhook URL is read from
+  # COST_AVERAGE_OUT_NOTIFICATION_WEBHOOK_URL.
   provider: none

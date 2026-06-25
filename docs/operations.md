@@ -29,13 +29,26 @@ run-once
 
 Back up the SQLite database before upgrades and at least daily during live use.
 The database is the local audit trail for cycles, orders, fills, balances, and
-notifications.
+notifications. Use SQLite's online backup command while the app is idle:
+
+```bash
+sqlite3 data/cost_average_out.sqlite3 ".backup 'backup/cost_average_out-$(date -u +%Y%m%dT%H%M%SZ).sqlite3'"
+```
 
 ## Recovery
 
 If a run fails after order submission, do not manually delete local state. Run
 `reconcile` first so the app can compare local records with exchange orders and
 fills.
+
+- Timeout: run `reconcile`, inspect `status`, and retry only after unknown orders
+  are resolved.
+- Partial fill: run `reconcile`; the app blocks further live execution while the
+  app-created order remains open or partial.
+- VM restart: run `status` first, then `reconcile`; do not rerun live execution
+  until unresolved warnings are gone.
+- Bad config: fix config, run `validate-config`, then use `plan` before any live
+  run.
 
 
 ## Initial Snapshot
@@ -90,3 +103,41 @@ Live execution is blocked when `live_trading_enabled` is false, `kill_switch` is
 true, a missed cycle requires manual approval, the plan has block reasons, or any
 app-created exchange order is unresolved. Submission timeouts are persisted as
 `unknown_requires_reconciliation`; reconcile before retrying.
+
+
+## Notifications
+
+Use `notifications.provider: none` for local testing. For webhook notifications,
+set:
+
+```yaml
+notifications:
+  provider: webhook
+```
+
+and provide the URL through the environment:
+
+```bash
+export COST_AVERAGE_OUT_NOTIFICATION_WEBHOOK_URL=https://example.invalid/webhook
+```
+
+Notification kinds distinguish success, skip, block, and failure states.
+
+
+## systemd
+
+Example units are provided in:
+
+- `docs/cost-average-out.service.example`
+- `docs/cost-average-out.timer.example`
+
+Install them under `/etc/systemd/system/`, update paths and user/group, then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now cost-average-out.timer
+systemctl list-timers cost-average-out.timer
+```
+
+Start with `--dry-run` in the service file. Switch to `--live` only after read-only
+and dry-run execution have been validated.

@@ -1,0 +1,18 @@
+[Unit]
+Description=Cost Average Out one-shot run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cost-average-out
+EnvironmentFile=/opt/cost-average-out/.env
+ExecStart=/opt/cost-average-out/.venv/bin/cost-average-out run-once --dry-run --config /opt/cost-average-out/config.yaml
+# For live operation, replace --dry-run with --live after dry-run validation.
+# ExecStart=/opt/cost-average-out/.venv/bin/cost-average-out run-once --live --config /opt/cost-average-out/config.yaml
+User=cost-average-out
+Group=cost-average-out
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cost-average-out/data

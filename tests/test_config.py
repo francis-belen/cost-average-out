@@ -85,3 +85,12 @@ def test_normalization_and_unknown_field_rejection() -> None:
     data["unexpected"] = True
     with pytest.raises(ValidationError, match="Extra inputs"):
         AppConfig.model_validate(data)
+
+
+def test_webhook_notification_provider_is_supported() -> None:
+    data = valid_config_data()
+    data["notifications"] = {"provider": "webhook"}
+
+    config = AppConfig.model_validate(data)
+
+    assert config.notifications.provider == "webhook"

@@ -11,6 +11,7 @@ Key sections:
 - `cost_average_out`: schedule and sell percentage.
 - `symbols`: allowlist of pairs the app may sell.
 - `safety`: live flag, kill switch, spread, and value limits.
+- `notifications`: notification provider settings.
 
 ## Schedule Semantics
 
@@ -38,7 +39,17 @@ For deterministic inspection, provide an offset-aware ISO-8601 instant:
 cost-average-out schedule-status --config config.yaml \
   --at 2030-01-01T12:00:00+01:00
 ```
-- `notifications`: notification provider settings.
+
+## Notifications
+
+Supported providers are:
+
+- `none`: do not send notifications.
+- `webhook`: POST JSON notifications to the URL in
+  `COST_AVERAGE_OUT_NOTIFICATION_WEBHOOK_URL`.
+
+Webhook payloads include `kind`, `title`, and `body`. Kinds distinguish
+`success`, `skip`, `block`, and `failure`.
 
 Live orders must remain blocked while `safety.live_trading_enabled` is false or
 `safety.kill_switch` is true.

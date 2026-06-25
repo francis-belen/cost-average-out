@@ -70,7 +70,7 @@ class SafetySettings(StrictModel):
 
 
 class NotificationSettings(StrictModel):
-    provider: Literal["none"]
+    provider: Literal["none", "webhook"]
 
 
 class AppConfig(StrictModel):

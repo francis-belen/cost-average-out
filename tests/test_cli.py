@@ -7,8 +7,17 @@ from pytest import MonkeyPatch
 from typer.testing import CliRunner
 
 from cost_average_out.cli import app
+from cost_average_out.notifications import NotificationMessage
 from tests.test_config import valid_config_data
 from tests.test_reconciliation import FakeExchangeAdapter
+
+
+class CapturingNotificationProvider:
+    def __init__(self) -> None:
+        self.messages: list[NotificationMessage] = []
+
+    def send(self, message: NotificationMessage) -> None:
+        self.messages.append(message)
 
 runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +146,9 @@ def test_init_ledger_is_repeatable_and_status_is_ledger_backed(
     assert "Cycles: 0" in status.stdout
     assert "Planned orders: 0" in status.stdout
     assert "Unresolved exchange orders: 0" in status.stdout
+    assert "Schedule status:" in status.stdout
+    assert "Next/relevant cycle ID: cao-" in status.stdout
+    assert "Manual approval required:" in status.stdout
     assert "Last cycle: none" in status.stdout
 
 
@@ -249,6 +261,41 @@ def test_run_once_dry_run_writes_no_exchange_orders_by_default(
     assert "Cycles: 0" in status.stdout
     assert "Planned orders: 0" in status.stdout
     assert "Unresolved exchange orders: 0" in status.stdout
+
+
+def test_run_once_dry_run_sends_notification_preview(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    notifier = CapturingNotificationProvider()
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_notification_provider",
+        lambda settings: notifier,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-once",
+            "--dry-run",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(notifier.messages) == 1
+    assert notifier.messages[0].title == "Cost Average Out dry run"
+    assert "Dry run:" in notifier.messages[0].body
 
 
 def test_run_once_dry_run_can_persist_simulation(

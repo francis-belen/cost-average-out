@@ -20,6 +20,13 @@ from cost_average_out.exchange import (
     create_exchange_adapter,
 )
 from cost_average_out.ledger import BalanceInput, Ledger, LedgerError
+from cost_average_out.notifications import (
+    NotificationError,
+    NotificationKind,
+    NotificationMessage,
+    NotificationProvider,
+    create_notification_provider,
+)
 from cost_average_out.planner import SellPlanItem
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
@@ -142,7 +149,8 @@ def status(
         validated = load_config(config)
         ledger = Ledger(validated.database_path.expanduser())
         summary = ledger.summary()
-    except (ConfigError, LedgerError, OSError) as exc:
+        evaluation = evaluate_cycle(validated, datetime.now(UTC))
+    except (ConfigError, LedgerError, OSError, ValueError) as exc:
         typer.echo(f"Status unavailable: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -152,6 +160,15 @@ def status(
         typer.echo(f"  {cycle_status}: {count}")
     typer.echo(f"Planned orders: {summary.planned_order_count}")
     typer.echo(f"Unresolved exchange orders: {summary.unresolved_exchange_order_count}")
+    typer.echo(f"Schedule status: {evaluation.status.value}")
+    typer.echo(f"Next/relevant scheduled at: {evaluation.scheduled_at.isoformat()}")
+    typer.echo(f"Next/relevant cycle ID: {evaluation.cycle_id}")
+    typer.echo(
+        "Manual approval required: "
+        f"{'yes' if evaluation.requires_manual_approval else 'no'}"
+    )
+    if summary.unresolved_exchange_order_count:
+        typer.echo("Warning: unresolved app-created exchange orders block execution")
     if summary.last_cycle_id is None:
         typer.echo("Last cycle: none")
     else:
@@ -299,6 +316,7 @@ def run_once(
         validated = load_config(config)
         ledger = Ledger(validated.database_path.expanduser())
         ledger.summary()
+        notifier = create_notification_provider(validated.notifications)
         adapter = create_exchange_adapter(validated.exchange)
         evaluated_at = _parse_instant(at) if at is not None else datetime.now(UTC)
         if dry_run:
@@ -309,6 +327,14 @@ def run_once(
                 now=evaluated_at,
                 persist_simulation=persist_simulation,
             )
+            _send_notification(
+                notifier,
+                NotificationMessage(
+                    kind=_dry_run_notification_kind(result.notification_preview),
+                    title="Cost Average Out dry run",
+                    body=result.notification_preview,
+                ),
+            )
         else:
             live_result = live_run_once(
                 validated,
@@ -317,14 +343,36 @@ def run_once(
                 now=evaluated_at,
                 confirm_first_live_sell=confirm_first_live_sell,
             )
+            _send_notification(
+                notifier,
+                NotificationMessage(
+                    kind=(
+                        NotificationKind.BLOCK
+                        if live_result.reconciliation.execution_blocked
+                        else NotificationKind.SUCCESS
+                    ),
+                    title="Cost Average Out live run",
+                    body=live_result.notification_preview,
+                ),
+            )
     except LiveExecutionBlockedError as exc:
+        _notify_failure_if_configured(config, "Cost Average Out live blocked", str(exc))
         typer.echo(f"Live execution blocked: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     except ExchangeTimeoutError as exc:
+        _notify_failure_if_configured(config, "Cost Average Out live timeout", str(exc))
         typer.echo(f"Live execution timeout: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except NotificationError as exc:
+        typer.echo(f"Notification configuration failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
         label = "Dry run" if dry_run else "Live run"
+        _notify_failure_if_configured(
+            config,
+            f"Cost Average Out {label.lower()} failed",
+            str(exc),
+        )
         typer.echo(f"{label} failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -348,6 +396,43 @@ def run_once(
         )
         typer.echo(f"Notification preview: {live_result.notification_preview}")
 
+
+def _dry_run_notification_kind(summary: str) -> NotificationKind:
+    if "blocked" in summary:
+        return NotificationKind.BLOCK
+    if "no cycle is due" in summary or "skipped/blocked" in summary:
+        return NotificationKind.SKIP
+    return NotificationKind.SUCCESS
+
+
+def _notify_failure_if_configured(
+    config_path: Path,
+    title: str,
+    body: str,
+) -> None:
+    try:
+        validated = load_config(config_path)
+        notifier = create_notification_provider(validated.notifications)
+        _send_notification(
+            notifier,
+            NotificationMessage(
+                kind=NotificationKind.FAILURE,
+                title=title,
+                body=body,
+            ),
+        )
+    except (ConfigError, NotificationError, OSError):
+        return
+
+
+def _send_notification(
+    provider: NotificationProvider,
+    message: NotificationMessage,
+) -> None:
+    try:
+        provider.send(message)
+    except NotificationError as exc:
+        typer.echo(f"Notification failed: {exc}", err=True)
 
 def _echo_plan_preview(preview: PlanPreview) -> None:
     typer.echo(f"Observed at: {preview.sell_plan.observed_at.isoformat()}")

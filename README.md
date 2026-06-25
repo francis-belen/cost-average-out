@@ -5,14 +5,16 @@ distribution.
 
 ## Status
 
-Pre-MVP project scaffold. The initial goal is a conservative CLI app that can
-sell a configured percentage of selected exchange balances on a fixed schedule.
+MVP implementation in progress. The CLI can validate config, initialize a local
+ledger, reconcile read-only exchange state, snapshot balances, plan sells, run
+dry-run cycles, and execute guarded live cycles when explicitly enabled.
 
 ## Warning
 
-This project can submit real exchange orders once live trading is implemented and
-enabled. It is not financial advice, tax advice, or a managed service. Use dry-run
-mode first and review every configuration value before enabling live trading.
+This project can submit real exchange orders when live trading is enabled and
+`run-once --live` is used. It is not financial advice, tax advice, or a managed
+service. Use dry-run mode first and review every configuration value before
+enabling live trading.
 
 ## MVP Scope
 
@@ -82,3 +84,5 @@ External contributions are not currently accepted. See [CONTRIBUTING.md](./CONTR
 - [Safety](./docs/safety.md)
 - [Operations](./docs/operations.md)
 - [Exchange Adapters](./docs/exchange-adapters.md)
+- [systemd service example](./docs/cost-average-out.service.example)
+- [systemd timer example](./docs/cost-average-out.timer.example)

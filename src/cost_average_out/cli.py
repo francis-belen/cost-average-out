@@ -10,7 +10,6 @@ import typer
 from cost_average_out.config import ConfigError, load_config
 from cost_average_out.cycle import (
     LiveExecutionBlockedError,
-    PlanPreview,
     dry_run_once,
     live_run_once,
     preview_plan,
@@ -28,12 +27,13 @@ from cost_average_out.notifications import (
     NotificationProvider,
     create_notification_provider,
 )
-from cost_average_out.planner import SellPlanItem
 from cost_average_out.portfolio import backfill_prices, default_since, portfolio_history
+from cost_average_out.presentation import CliPresenter
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
 app = typer.Typer(help="Cost Average Out CLI.")
+presenter = CliPresenter()
 
 
 @app.command()
@@ -94,13 +94,7 @@ def schedule_status(
         typer.echo(f"Schedule evaluation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Status: {evaluation.status.value}")
-    typer.echo(f"Scheduled at: {evaluation.scheduled_at.isoformat()}")
-    typer.echo(f"Cycle ID: {evaluation.cycle_id}")
-    typer.echo(
-        "Manual approval required: "
-        f"{'yes' if evaluation.requires_manual_approval else 'no'}"
-    )
+    presenter.schedule_status(validated, evaluation)
 
 
 def _parse_instant(value: str) -> datetime:
@@ -156,28 +150,7 @@ def status(
         typer.echo(f"Status unavailable: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Ledger: {ledger.path}")
-    typer.echo(f"Cycles: {sum(summary.cycle_counts.values())}")
-    for cycle_status, count in sorted(summary.cycle_counts.items()):
-        typer.echo(f"  {cycle_status}: {count}")
-    typer.echo(f"Planned orders: {summary.planned_order_count}")
-    typer.echo(f"Unresolved exchange orders: {summary.unresolved_exchange_order_count}")
-    typer.echo(f"Schedule status: {evaluation.status.value}")
-    typer.echo(f"Next/relevant scheduled at: {evaluation.scheduled_at.isoformat()}")
-    typer.echo(f"Next/relevant cycle ID: {evaluation.cycle_id}")
-    typer.echo(
-        "Manual approval required: "
-        f"{'yes' if evaluation.requires_manual_approval else 'no'}"
-    )
-    if summary.unresolved_exchange_order_count:
-        typer.echo("Warning: unresolved app-created exchange orders block execution")
-    if summary.last_cycle_id is None:
-        typer.echo("Last cycle: none")
-    else:
-        typer.echo(
-            f"Last cycle: {summary.last_cycle_id} "
-            f"({summary.last_cycle_status}, {summary.last_cycle_scheduled_at})"
-        )
+    presenter.status(validated, ledger.path, summary, evaluation)
 
 
 @app.command("snapshot-balances")
@@ -217,8 +190,11 @@ def snapshot_balances(
         typer.echo(f"Balance snapshot failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Initial balance snapshot recorded: {count} balances")
-    typer.echo(f"Markets validated: {len(markets)}")
+    presenter.snapshot_balances(
+        validated,
+        balance_count=count,
+        market_count=len(markets),
+    )
 
 
 @app.command()
@@ -256,7 +232,7 @@ def plan(
         typer.echo(f"Plan failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    _echo_plan_preview(preview)
+    presenter.plan_preview(validated, preview)
 
 
 @app.command("run-once")
@@ -379,24 +355,9 @@ def run_once(
         raise typer.Exit(code=1) from exc
 
     if dry_run:
-        typer.echo(f"Dry run cycle status: {result.evaluation.status.value}")
-        typer.echo(f"Scheduled at: {result.evaluation.scheduled_at.isoformat()}")
-        typer.echo(f"Cycle ID: {result.evaluation.cycle_id}")
-        if result.persisted_cycle_id is not None:
-            typer.echo(f"Simulation persisted: {result.persisted_cycle_id}")
-        if result.preview is not None:
-            _echo_plan_preview(result.preview)
-        typer.echo(f"Notification preview: {result.notification_preview}")
+        presenter.dry_run(validated, result)
     else:
-        typer.echo(f"Live cycle status: {live_result.evaluation.status.value}")
-        typer.echo(f"Scheduled at: {live_result.evaluation.scheduled_at.isoformat()}")
-        typer.echo(f"Cycle ID: {live_result.evaluation.cycle_id}")
-        typer.echo(f"Submitted orders: {live_result.submitted_order_count}")
-        typer.echo(
-            "Post-submit reconciliation blocked: "
-            f"{'yes' if live_result.reconciliation.execution_blocked else 'no'}"
-        )
-        typer.echo(f"Notification preview: {live_result.notification_preview}")
+        presenter.live_run(validated, live_result)
 
 
 def _dry_run_notification_kind(summary: str) -> NotificationKind:
@@ -435,30 +396,6 @@ def _send_notification(
         provider.send(message)
     except NotificationError as exc:
         typer.echo(f"Notification failed: {exc}", err=True)
-
-
-def _echo_plan_preview(preview: PlanPreview) -> None:
-    typer.echo(f"Observed at: {preview.sell_plan.observed_at.isoformat()}")
-    typer.echo(f"Execution blocked: {'yes' if preview.execution_blocked else 'no'}")
-    for reason in preview.block_reasons:
-        typer.echo(f"Block reason: {reason}")
-    typer.echo("Sell plan:")
-    for item in preview.sell_plan.items:
-        typer.echo(_format_plan_item(item))
-
-
-def _format_plan_item(item: SellPlanItem) -> str:
-    reason = f"; reason={item.reason}" if item.reason is not None else ""
-    return (
-        f"  {item.symbol}: status={item.status.value}; "
-        f"quantity={_format_decimal(item.quantity)}; "
-        f"estimated_value={_format_decimal(item.estimated_quote_value)}"
-        f"{reason}"
-    )
-
-
-def _format_decimal(value: object) -> str:
-    return format(value, "f")
 
 
 @app.command("backfill-prices")
@@ -562,10 +499,4 @@ def reconcile(
         typer.echo(f"Reconciliation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Balances recorded: {result.balance_count}")
-    typer.echo(f"Markets validated: {result.market_count}")
-    typer.echo(f"Open orders: {result.open_order_count}")
-    typer.echo(f"Recent orders: {result.recent_order_count}")
-    typer.echo(f"Recent fills: {result.recent_fill_count}")
-    typer.echo(f"Unresolved app orders: {result.unresolved_app_order_count}")
-    typer.echo(f"Execution blocked: {'yes' if result.execution_blocked else 'no'}")
+    presenter.reconciliation(validated, result)

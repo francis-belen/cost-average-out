@@ -51,6 +51,70 @@ Check that:
 
 This checklist is read-only against the exchange except for local SQLite writes.
 
+## Production Readiness Plan
+
+Treat the current app as MVP/pre-release until one controlled live sell has been
+completed and reconciled. The safe progression is:
+
+1. Run the MVP validation checklist above with live trading disabled.
+2. Create a separate exchange API key for live testing. It may have balance,
+   order, trade-history, and spot order-creation permissions. It must not have
+   withdrawal permission.
+3. Configure exactly one test symbol and a sell percentage that produces an order
+   above the exchange minimum. Keep `max_sell_value_per_cycle` low, such as
+   EUR 5-10, for the first live test.
+4. Keep `require_first_live_sell_confirmation: true`.
+5. Run pre-live checks:
+
+   ```bash
+   cost-average-out validate-config --config config.yaml
+   cost-average-out reconcile --config config.yaml
+   cost-average-out plan --config config.yaml
+   cost-average-out run-once --dry-run --config config.yaml
+   ```
+
+6. Execute the first live sell only when the plan is intentional:
+
+   ```bash
+   cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+   ```
+
+7. Reconcile immediately:
+
+   ```bash
+   cost-average-out reconcile --config config.yaml
+   cost-average-out status --config config.yaml
+   ```
+
+Production-ready criteria for personal use:
+
+- one live order was submitted intentionally,
+- the exchange order ID was persisted locally,
+- fills and balances reconciled successfully,
+- rerunning the same cycle did not duplicate the sell,
+- `status` shows zero unresolved exchange orders,
+- backup and restore procedure has been tested,
+- `systemd` dry-run timer has been tested,
+- optional webhook notifications have been tested if enabled.
+
+## Recommended Production Host
+
+For production use, run Cost Average Out on a dedicated VM or similarly isolated
+host. Recommended baseline:
+
+- dedicated Linux VM, not a shared workstation,
+- dedicated Unix user such as `cost-average-out`,
+- project-owned Python virtual environment,
+- `.env`, `config.yaml`, and SQLite database readable only by that user,
+- exchange API key scoped only to the required permissions and never withdrawal,
+- `systemd timer` running `run-once`,
+- daily SQLite backups copied off-host,
+- logs monitored through `journalctl`,
+- live mode enabled only after repeated dry-run validation.
+
+This keeps credentials, local ledger state, scheduling, and backups isolated from
+other projects and reduces the blast radius of a host compromise.
+
 ## Backups
 
 Back up the SQLite database before upgrades and at least daily during live use.

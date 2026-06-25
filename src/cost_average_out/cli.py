@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -28,6 +29,7 @@ from cost_average_out.notifications import (
     create_notification_provider,
 )
 from cost_average_out.planner import SellPlanItem
+from cost_average_out.portfolio import backfill_prices, default_since, portfolio_history
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
@@ -194,7 +196,7 @@ def snapshot_balances(
     try:
         validated = load_config(config)
         ledger = Ledger(validated.database_path.expanduser())
-        ledger.summary()
+        ledger.migrate()
         adapter = create_exchange_adapter(validated.exchange)
         markets = adapter.fetch_markets(validated.symbols)
         balances = adapter.fetch_balances()
@@ -434,6 +436,7 @@ def _send_notification(
     except NotificationError as exc:
         typer.echo(f"Notification failed: {exc}", err=True)
 
+
 def _echo_plan_preview(preview: PlanPreview) -> None:
     typer.echo(f"Observed at: {preview.sell_plan.observed_at.isoformat()}")
     typer.echo(f"Execution blocked: {'yes' if preview.execution_blocked else 'no'}")
@@ -456,6 +459,71 @@ def _format_plan_item(item: SellPlanItem) -> str:
 
 def _format_decimal(value: object) -> str:
     return format(value, "f")
+
+
+@app.command("backfill-prices")
+def backfill_prices_command(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", dir_okay=False),
+    ] = Path("config.yaml"),
+    days: Annotated[
+        int,
+        typer.Option("--days", min=1, help="Number of recent days to backfill."),
+    ] = 90,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help="Optional exchange candle limit."),
+    ] = None,
+) -> None:
+    """Backfill daily OHLCV candles into the local price cache."""
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.migrate()
+        adapter = create_exchange_adapter(validated.exchange)
+        result = backfill_prices(
+            validated,
+            ledger,
+            adapter,
+            since=default_since(days),
+            limit=limit,
+        )
+    except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Price backfill failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Candles fetched: {result.fetched_count}")
+    typer.echo(f"Candles stored: {result.stored_count}")
+
+
+@app.command("portfolio-history")
+def portfolio_history_command(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", dir_okay=False),
+    ] = Path("config.yaml"),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write JSON to this path."),
+    ] = None,
+) -> None:
+    """Export chart-ready portfolio history JSON from cached candles."""
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.summary()
+        rows = portfolio_history(validated, ledger, exchange=validated.exchange)
+    except (ConfigError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Portfolio history failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    payload = json.dumps(rows, indent=2, sort_keys=True)
+    if output is None:
+        typer.echo(payload)
+    else:
+        output.write_text(payload + "\n", encoding="utf-8")
+        typer.echo(f"Portfolio history written: {output}")
 
 
 @app.command()

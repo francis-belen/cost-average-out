@@ -332,6 +332,30 @@ def test_run_once_dry_run_can_persist_simulation(
     assert "Unresolved exchange orders: 0" in status.stdout
 
 
+def test_backfill_prices_and_portfolio_history_commands(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    backfill = runner.invoke(
+        app,
+        ["backfill-prices", "--config", str(config), "--days", "1"],
+    )
+    history = runner.invoke(app, ["portfolio-history", "--config", str(config)])
+
+    assert backfill.exit_code == 0
+    assert "Candles fetched: 2" in backfill.stdout
+    assert history.exit_code == 0
+    assert "quote_currency" in history.stdout
+
+
 def test_reconcile_command_uses_read_only_adapter(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

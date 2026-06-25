@@ -7,7 +7,15 @@ from decimal import Decimal
 from pathlib import Path
 
 from cost_average_out.config import AppConfig
-from cost_average_out.exchange import Balance, Fill, Market, Order, OrderStatus, Ticker
+from cost_average_out.exchange import (
+    Balance,
+    Fill,
+    Market,
+    OhlcvCandle,
+    Order,
+    OrderStatus,
+    Ticker,
+)
 from cost_average_out.ledger import Ledger, PlannedOrderInput
 from cost_average_out.reconciliation import reconcile
 from tests.test_config import valid_config_data
@@ -58,6 +66,26 @@ class FakeExchangeAdapter:
 
     def fetch_tickers(self, symbols: Sequence[str]) -> Sequence[Ticker]:
         return self.tickers
+
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        since: datetime,
+        limit: int | None = None,
+    ) -> Sequence[OhlcvCandle]:
+        return [
+            OhlcvCandle(
+                symbol=symbol,
+                timeframe=timeframe,
+                opened_at=NOW,
+                open=Decimal("10"),
+                high=Decimal("12"),
+                low=Decimal("9"),
+                close=Decimal("11"),
+                volume=Decimal("1.5"),
+            )
+        ]
 
     def submit_market_sell_order(
         self,

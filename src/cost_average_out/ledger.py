@@ -102,6 +102,32 @@ class BalanceRecord:
 
 
 @dataclass(frozen=True)
+class CandleInput:
+    exchange: str
+    symbol: str
+    timeframe: str
+    opened_at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+
+
+@dataclass(frozen=True)
+class PriceCandle:
+    exchange: str
+    symbol: str
+    timeframe: str
+    opened_at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+
+
+@dataclass(frozen=True)
 class LedgerSummary:
     cycle_counts: dict[str, int]
     last_cycle_id: str | None
@@ -109,6 +135,31 @@ class LedgerSummary:
     last_cycle_scheduled_at: str | None
     planned_order_count: int
     unresolved_exchange_order_count: int
+
+
+_MIGRATION_2 = (
+    """
+    CREATE TABLE price_candles (
+        id INTEGER PRIMARY KEY,
+        exchange TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        open TEXT NOT NULL,
+        high TEXT NOT NULL,
+        low TEXT NOT NULL,
+        close TEXT NOT NULL,
+        volume TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(exchange, symbol, timeframe, opened_at)
+    )
+    """,
+    (
+        "CREATE INDEX idx_price_candles_lookup "
+        "ON price_candles(symbol, timeframe, opened_at)"
+    ),
+)
 
 
 _MIGRATION_1 = (
@@ -248,6 +299,24 @@ class Ledger:
                     """
                     INSERT INTO app_metadata(key, value, updated_at)
                     VALUES('schema_version', '1', ?)
+                    """,
+                    (now,),
+                )
+            if 2 not in applied:
+                for statement in _MIGRATION_2:
+                    connection.execute(statement)
+                now = _utc_now()
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?)",
+                    (now,),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO app_metadata(key, value, updated_at)
+                    VALUES('schema_version', '2', ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
                     """,
                     (now,),
                 )
@@ -638,6 +707,88 @@ class Ledger:
             matched_order_count=len(matched_order_ids),
             recorded_fill_count=recorded_fill_count,
         )
+
+
+    def record_price_candles(self, candles: Sequence[CandleInput]) -> int:
+        """Insert or update cached OHLCV candles."""
+
+        now = _utc_now()
+        written = 0
+        with self._connection() as connection, connection:
+            for candle in candles:
+                self._require_aware(candle.opened_at)
+                cursor = connection.execute(
+                    """
+                    INSERT INTO price_candles(
+                        exchange, symbol, timeframe, opened_at, open, high, low,
+                        close, volume, created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(exchange, symbol, timeframe, opened_at) DO UPDATE SET
+                        open = excluded.open,
+                        high = excluded.high,
+                        low = excluded.low,
+                        close = excluded.close,
+                        volume = excluded.volume,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        candle.exchange,
+                        candle.symbol,
+                        candle.timeframe,
+                        candle.opened_at.astimezone(UTC).isoformat(),
+                        str(candle.open),
+                        str(candle.high),
+                        str(candle.low),
+                        str(candle.close),
+                        str(candle.volume),
+                        now,
+                        now,
+                    ),
+                )
+                written += max(cursor.rowcount, 0)
+        return written
+
+    def price_candles(
+        self,
+        exchange: str,
+        symbols: Sequence[str],
+        timeframe: str = "1d",
+    ) -> list[PriceCandle]:
+        """Read cached candles for symbols in chronological order."""
+
+        if not symbols:
+            return []
+        placeholders = ",".join("?" for _ in symbols)
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    f"""
+                    SELECT exchange, symbol, timeframe, opened_at, open, high,
+                           low, close, volume
+                    FROM price_candles
+                    WHERE exchange = ?
+                      AND timeframe = ?
+                      AND symbol IN ({placeholders})
+                    ORDER BY opened_at, symbol
+                    """,
+                    (exchange, timeframe, *symbols),
+                ).fetchall()
+        except sqlite3.OperationalError as exc:
+            raise LedgerNotInitializedError("ledger migrations are incomplete") from exc
+        return [
+            PriceCandle(
+                exchange=str(row[0]),
+                symbol=str(row[1]),
+                timeframe=str(row[2]),
+                opened_at=datetime.fromisoformat(str(row[3])),
+                open=Decimal(str(row[4])),
+                high=Decimal(str(row[5])),
+                low=Decimal(str(row[6])),
+                close=Decimal(str(row[7])),
+                volume=Decimal(str(row[8])),
+            )
+            for row in rows
+        ]
 
     def has_unresolved_exchange_orders(self) -> bool:
         """Return whether local app-created orders require resolution."""

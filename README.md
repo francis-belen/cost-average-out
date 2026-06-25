@@ -46,6 +46,8 @@ cost-average-out reconcile --config config.yaml
 cost-average-out snapshot-balances --config config.yaml
 cost-average-out plan --config config.yaml
 cost-average-out run-once --dry-run --config config.yaml
+cost-average-out backfill-prices --config config.yaml --days 90
+cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 Config validation is offline: it parses and validates the YAML file without

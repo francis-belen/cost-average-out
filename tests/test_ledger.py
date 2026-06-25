@@ -9,6 +9,7 @@ import pytest
 
 from cost_average_out.ledger import (
     BalanceInput,
+    CandleInput,
     CycleState,
     Ledger,
     LedgerConflictError,
@@ -51,7 +52,7 @@ def test_migration_is_repeatable_and_creates_required_tables(tmp_path: Path) -> 
         "ledger_events",
         "balances",
     }.issubset(table_names(database))
-    assert row_count(database, "schema_migrations") == 1
+    assert row_count(database, "schema_migrations") == 2
 
 
 def test_summary_requires_initialized_ledger(tmp_path: Path) -> None:
@@ -179,3 +180,32 @@ def test_records_and_reads_latest_balance_snapshot(tmp_path: Path) -> None:
     assert balances["BTC"].available == Decimal("0.4")
     assert balances["BTC"].total == Decimal("0.65")
     assert balances["BTC"].source == "initial_snapshot"
+
+
+def test_records_and_reads_price_candles(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.sqlite3")
+    ledger.migrate()
+    opened_at = datetime(2030, 1, 1, tzinfo=UTC)
+
+    written = ledger.record_price_candles(
+        [
+            CandleInput(
+                exchange="kraken",
+                symbol="BTC/EUR",
+                timeframe="1d",
+                opened_at=opened_at,
+                open=Decimal("10"),
+                high=Decimal("12"),
+                low=Decimal("9"),
+                close=Decimal("11"),
+                volume=Decimal("1.5"),
+            )
+        ]
+    )
+
+    candles = ledger.price_candles("kraken", ["BTC/EUR"])
+
+    assert written == 1
+    assert len(candles) == 1
+    assert candles[0].opened_at == opened_at
+    assert candles[0].close == Decimal("11")

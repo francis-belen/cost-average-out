@@ -141,3 +141,19 @@ systemctl list-timers cost-average-out.timer
 
 Start with `--dry-run` in the service file. Switch to `--live` only after read-only
 and dry-run execution have been validated.
+
+
+## Price Cache and Portfolio History
+
+Backfill daily candles after reconciliation/snapshot data exists:
+
+```bash
+cost-average-out init-ledger --config config.yaml
+cost-average-out backfill-prices --config config.yaml --days 90
+cost-average-out portfolio-history --config config.yaml --output history.json
+```
+
+`portfolio-history` exports chart-ready JSON rows with per-asset cached close
+prices, quantities, values, total quote value, missing price symbols, and a
+valuation status. Missing candles are reported as `partial`; they are not silently
+ignored.

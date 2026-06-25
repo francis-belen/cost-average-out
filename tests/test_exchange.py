@@ -27,6 +27,7 @@ class FakeCcxtClient:
         self.closed_orders: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.trades: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.tickers: dict[str, Mapping[str, Any]] = {}
+        self.ohlcv: dict[str, Sequence[Sequence[Any]]] = {}
         self.created_orders: list[Mapping[str, Any]] = []
 
     def load_markets(self) -> Mapping[str, Mapping[str, Any]]:
@@ -41,6 +42,16 @@ class FakeCcxtClient:
         params: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self.tickers[symbol]
+
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str = "1m",
+        since: int | None = None,
+        limit: int | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Sequence[Sequence[Any]]:
+        return self.ohlcv.get(symbol, [])
 
     def create_order(
         self,
@@ -129,6 +140,23 @@ def test_fetch_tickers_normalizes_bid_ask() -> None:
     assert str(ticker.bid) == "50000"
     assert str(ticker.ask) == "50050"
     assert ticker.timestamp == datetime(2030, 1, 1, 0, tzinfo=UTC)
+
+
+def test_fetch_ohlcv_normalizes_daily_candles() -> None:
+    client = FakeCcxtClient()
+    client.ohlcv["BTC/EUR"] = [[1_893_456_000_000, 10, 12, 9, 11, 1.5]]
+    adapter = KrakenExchangeAdapter(client)
+
+    candle = adapter.fetch_ohlcv(
+        "BTC/EUR",
+        "1d",
+        datetime(2030, 1, 1, tzinfo=UTC),
+    )[0]
+
+    assert candle.symbol == "BTC/EUR"
+    assert candle.timeframe == "1d"
+    assert str(candle.close) == "11"
+    assert str(candle.volume) == "1.5"
 
 
 def test_fetch_markets_rejects_unavailable_symbols() -> None:

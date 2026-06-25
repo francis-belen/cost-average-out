@@ -68,6 +68,18 @@ class Ticker:
 
 
 @dataclass(frozen=True)
+class OhlcvCandle:
+    symbol: str
+    timeframe: str
+    opened_at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+
+
+@dataclass(frozen=True)
 class Order:
     exchange_order_id: str
     client_order_id: str | None
@@ -122,6 +134,14 @@ class ExchangeAdapter(Protocol):
         since: datetime,
     ) -> Sequence[Fill]: ...
 
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        since: datetime,
+        limit: int | None = None,
+    ) -> Sequence[OhlcvCandle]: ...
+
     def submit_market_sell_order(
         self,
         symbol: str,
@@ -166,6 +186,15 @@ class CcxtClient(Protocol):
         limit: int | None = None,
         params: Mapping[str, Any] | None = None,
     ) -> Sequence[Mapping[str, Any]]: ...
+
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str = "1m",
+        since: int | None = None,
+        limit: int | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Sequence[Sequence[Any]]: ...
 
     def create_order(
         self,
@@ -282,6 +311,25 @@ class KrakenExchangeAdapter:
             raise ExchangeError(f"Kraken fill fetch failed: {exc}") from exc
         return _deduplicate(fills, key=lambda fill: fill.exchange_fill_id)
 
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        since: datetime,
+        limit: int | None = None,
+    ) -> Sequence[OhlcvCandle]:
+        _require_aware(since)
+        try:
+            rows = self._client.fetch_ohlcv(
+                symbol,
+                timeframe,
+                _milliseconds(since),
+                limit,
+            )
+        except Exception as exc:
+            raise ExchangeError(f"Kraken OHLCV fetch failed: {exc}") from exc
+        return [_normalize_ohlcv(row, symbol, timeframe) for row in rows]
+
     def submit_market_sell_order(
         self,
         symbol: str,
@@ -388,6 +436,25 @@ def _normalize_fill(raw: Mapping[str, Any], fallback_symbol: str) -> Fill:
         ),
         filled_at=timestamp,
         raw=dict(raw),
+    )
+
+
+def _normalize_ohlcv(
+    row: Sequence[Any],
+    symbol: str,
+    timeframe: str,
+) -> OhlcvCandle:
+    if len(row) < 6:
+        raise ExchangeError("Kraken returned incomplete OHLCV data")
+    return OhlcvCandle(
+        symbol=symbol,
+        timeframe=timeframe,
+        opened_at=_optional_datetime(row[0]) or datetime.fromtimestamp(0, tz=UTC),
+        open=_decimal(row[1]),
+        high=_decimal(row[2]),
+        low=_decimal(row[3]),
+        close=_decimal(row[4]),
+        volume=_decimal(row[5]),
     )
 
 

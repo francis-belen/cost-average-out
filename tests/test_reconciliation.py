@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from cost_average_out.config import AppConfig
-from cost_average_out.exchange import Balance, Fill, Market, Order, OrderStatus
+from cost_average_out.exchange import Balance, Fill, Market, Order, OrderStatus, Ticker
 from cost_average_out.ledger import Ledger, PlannedOrderInput
 from cost_average_out.reconciliation import reconcile
 from tests.test_config import valid_config_data
@@ -44,6 +44,10 @@ class FakeExchangeAdapter:
         self.open_orders: Sequence[Order] = []
         self.recent_orders: Sequence[Order] = []
         self.fills: Sequence[Fill] = []
+        self.tickers: Sequence[Ticker] = [
+            Ticker("BTC/EUR", Decimal("50000"), Decimal("50050"), NOW),
+            Ticker("ETH/EUR", Decimal("2500"), Decimal("2502"), NOW),
+        ]
 
     def fetch_balances(self) -> Sequence[Balance]:
         return self.balances
@@ -51,6 +55,9 @@ class FakeExchangeAdapter:
     def fetch_markets(self, symbols: Sequence[str]) -> Sequence[Market]:
         assert list(symbols) == ["BTC/EUR", "ETH/EUR"]
         return self.markets
+
+    def fetch_tickers(self, symbols: Sequence[str]) -> Sequence[Ticker]:
+        return self.tickers
 
     def fetch_open_orders(self, symbols: Sequence[str]) -> Sequence[Order]:
         return self.open_orders
@@ -146,11 +153,14 @@ def test_open_app_created_order_blocks_execution(tmp_path: Path) -> None:
 
     assert result.unresolved_app_order_count == 1
     assert result.execution_blocked is True
-    assert scalar(
-        ledger.path,
-        "SELECT status FROM exchange_orders WHERE client_order_id = "
-        "'cao-cycle-1-btc'",
-    ) == "open"
+    assert (
+        scalar(
+            ledger.path,
+            "SELECT status FROM exchange_orders WHERE client_order_id = "
+            "'cao-cycle-1-btc'",
+        )
+        == "open"
+    )
 
 
 def test_closed_order_and_fill_are_reconciled_idempotently(tmp_path: Path) -> None:
@@ -179,10 +189,13 @@ def test_closed_order_and_fill_are_reconciled_idempotently(tmp_path: Path) -> No
     assert first.execution_blocked is False
     assert second.recorded_fill_count == 0
     assert scalar(ledger.path, "SELECT COUNT(*) FROM fills") == 1
-    assert scalar(
-        ledger.path,
-        "SELECT status FROM exchange_orders WHERE exchange_order_id = 'order-1'",
-    ) == "filled"
+    assert (
+        scalar(
+            ledger.path,
+            "SELECT status FROM exchange_orders WHERE exchange_order_id = 'order-1'",
+        )
+        == "filled"
+    )
 
 
 def test_orphan_remote_app_order_still_blocks_execution(tmp_path: Path) -> None:

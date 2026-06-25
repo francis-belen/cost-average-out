@@ -20,3 +20,13 @@ Required controls:
 The app must reconcile before live orders. A timeout or crash after order
 submission must produce an unknown state that blocks retries until exchange state
 is checked.
+
+
+## Sell Planning
+
+Phase 4 planning computes sells only for configured allowlist symbols. Sizing is
+based on available balance, not locked or total balance. For each symbol, the
+planner validates exchange minimum amount/notional, maximum sell value per
+cycle, minimum remaining value, and bid/ask spread before an item can be marked
+`planned`. Unsafe items are marked `skipped` or `blocked` with an explicit
+reason.

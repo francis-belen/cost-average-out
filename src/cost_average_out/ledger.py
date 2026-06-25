@@ -56,6 +56,7 @@ class PlannedOrderInput:
     status: PlannedOrderState = PlannedOrderState.PLANNED
     reason: str | None = None
 
+
 @dataclass(frozen=True)
 class BalanceInput:
     asset: str
@@ -89,6 +90,15 @@ class ReconciliationWriteResult:
     balance_count: int
     matched_order_count: int
     recorded_fill_count: int
+
+
+@dataclass(frozen=True)
+class BalanceRecord:
+    asset: str
+    available: Decimal
+    total: Decimal
+    observed_at: datetime
+    source: str
 
 
 @dataclass(frozen=True)
@@ -417,6 +427,87 @@ class Ledger:
                 f"exchange order already exists: {client_order_id}"
             ) from exc
 
+    def record_balances(
+        self,
+        exchange: str,
+        observed_at: datetime,
+        balances: Sequence[BalanceInput],
+        source: str,
+    ) -> int:
+        """Persist a point-in-time balance snapshot."""
+
+        self._require_aware(observed_at)
+        if not source.strip():
+            raise ValueError("source must be non-empty")
+        observed = observed_at.astimezone(UTC).isoformat()
+        with self._connection() as connection, connection:
+            self._record_balances(connection, exchange, observed, balances, source)
+            connection.execute(
+                """
+                INSERT INTO ledger_events(
+                    cycle_id, event_type, payload_json, created_at
+                ) VALUES(NULL, 'balances_recorded', ?, ?)
+                """,
+                (
+                    json.dumps(
+                        {
+                            "balance_count": len(balances),
+                            "exchange": exchange,
+                            "source": source,
+                        },
+                        sort_keys=True,
+                    ),
+                    observed,
+                ),
+            )
+        return len(balances)
+
+    def latest_balances(
+        self,
+        exchange: str,
+        *,
+        source: str | None = None,
+    ) -> dict[str, BalanceRecord]:
+        """Return the latest balance row per asset for an exchange/source."""
+
+        if not self.path.is_file():
+            raise LedgerNotInitializedError(f"ledger does not exist: {self.path}")
+        source_filter = "AND source = ?" if source is not None else ""
+        parameters: tuple[str, ...] = (
+            (exchange,) if source is None else (exchange, source)
+        )
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    f"""
+                    SELECT b.asset, b.available, b.total, b.observed_at, b.source
+                    FROM balances b
+                    JOIN (
+                        SELECT asset, MAX(observed_at) AS observed_at
+                        FROM balances
+                        WHERE exchange = ? {source_filter}
+                        GROUP BY asset
+                    ) latest
+                        ON latest.asset = b.asset
+                       AND latest.observed_at = b.observed_at
+                    WHERE b.exchange = ? {source_filter}
+                    """,
+                    (*parameters, *parameters),
+                ).fetchall()
+        except sqlite3.OperationalError as exc:
+            raise LedgerNotInitializedError("ledger migrations are incomplete") from exc
+
+        return {
+            str(row[0]): BalanceRecord(
+                asset=str(row[0]),
+                available=Decimal(str(row[1])),
+                total=Decimal(str(row[2])),
+                observed_at=datetime.fromisoformat(str(row[3])),
+                source=str(row[4]),
+            )
+            for row in rows
+        }
+
     def record_reconciliation(
         self,
         exchange: str,
@@ -432,25 +523,9 @@ class Ledger:
         matched_order_ids: set[int] = set()
         recorded_fill_count = 0
         with self._connection() as connection, connection:
-            for balance in balances:
-                connection.execute(
-                    """
-                    INSERT INTO balances(
-                        exchange, asset, available, total, observed_at, source
-                    ) VALUES(?, ?, ?, ?, ?, 'reconciliation')
-                    ON CONFLICT(exchange, asset, observed_at) DO UPDATE SET
-                        available = excluded.available,
-                        total = excluded.total,
-                        source = excluded.source
-                    """,
-                    (
-                        exchange,
-                        balance.asset,
-                        str(balance.available),
-                        str(balance.total),
-                        observed,
-                    ),
-                )
+            self._record_balances(
+                connection, exchange, observed, balances, "reconciliation"
+            )
 
             for order in orders:
                 local_order = self._find_exchange_order(
@@ -539,6 +614,35 @@ class Ledger:
         """Return whether local app-created orders require resolution."""
 
         return self.summary().unresolved_exchange_order_count > 0
+
+    @staticmethod
+    def _record_balances(
+        connection: sqlite3.Connection,
+        exchange: str,
+        observed: str,
+        balances: Sequence[BalanceInput],
+        source: str,
+    ) -> None:
+        for balance in balances:
+            connection.execute(
+                """
+                INSERT INTO balances(
+                    exchange, asset, available, total, observed_at, source
+                ) VALUES(?, ?, ?, ?, ?, ?)
+                ON CONFLICT(exchange, asset, observed_at) DO UPDATE SET
+                    available = excluded.available,
+                    total = excluded.total,
+                    source = excluded.source
+                """,
+                (
+                    exchange,
+                    balance.asset,
+                    str(balance.available),
+                    str(balance.total),
+                    observed,
+                    source,
+                ),
+            )
 
     @staticmethod
     def _find_exchange_order(

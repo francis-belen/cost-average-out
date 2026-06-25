@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cost_average_out.ledger import (
+    BalanceInput,
     CycleState,
     Ledger,
     LedgerConflictError,
@@ -154,3 +155,27 @@ def test_foreign_keys_are_enabled(tmp_path: Path) -> None:
                 ) VALUES(999, 'BTC/EUR', '1', '1', 'planned', 'now', 'now')
                 """
             )
+
+
+def test_records_and_reads_latest_balance_snapshot(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.sqlite3")
+    ledger.migrate()
+
+    ledger.record_balances(
+        "kraken",
+        datetime(2030, 1, 1, tzinfo=UTC),
+        [BalanceInput("BTC", Decimal("0.5"), Decimal("0.75"))],
+        "initial_snapshot",
+    )
+    ledger.record_balances(
+        "kraken",
+        datetime(2030, 1, 2, tzinfo=UTC),
+        [BalanceInput("BTC", Decimal("0.4"), Decimal("0.65"))],
+        "initial_snapshot",
+    )
+
+    balances = ledger.latest_balances("kraken", source="initial_snapshot")
+
+    assert balances["BTC"].available == Decimal("0.4")
+    assert balances["BTC"].total == Decimal("0.65")
+    assert balances["BTC"].source == "initial_snapshot"

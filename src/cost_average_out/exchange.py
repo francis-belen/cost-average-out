@@ -16,6 +16,7 @@ APP_CLIENT_ORDER_PREFIX = "cao-"
 
 T = TypeVar("T")
 
+
 class ExchangeError(RuntimeError):
     """Base error for normalized exchange failures."""
 
@@ -52,6 +53,14 @@ class Market:
     minimum_amount: Decimal | None
     minimum_cost: Decimal | None
     amount_precision: Decimal | None
+
+
+@dataclass(frozen=True)
+class Ticker:
+    symbol: str
+    bid: Decimal | None
+    ask: Decimal | None
+    timestamp: datetime | None
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,8 @@ class ExchangeAdapter(Protocol):
 
     def fetch_markets(self, symbols: Sequence[str]) -> Sequence[Market]: ...
 
+    def fetch_tickers(self, symbols: Sequence[str]) -> Sequence[Ticker]: ...
+
     def fetch_open_orders(self, symbols: Sequence[str]) -> Sequence[Order]: ...
 
     def fetch_recent_orders(
@@ -114,6 +125,12 @@ class CcxtClient(Protocol):
     def load_markets(self) -> Mapping[str, Mapping[str, Any]]: ...
 
     def fetch_balance(self) -> Mapping[str, Any]: ...
+
+    def fetch_ticker(
+        self,
+        symbol: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]: ...
 
     def fetch_open_orders(
         self,
@@ -207,6 +224,17 @@ class KrakenExchangeAdapter:
             )
         return markets
 
+    def fetch_tickers(self, symbols: Sequence[str]) -> Sequence[Ticker]:
+        tickers: list[Ticker] = []
+        try:
+            for symbol in symbols:
+                tickers.append(
+                    _normalize_ticker(self._client.fetch_ticker(symbol), symbol)
+                )
+        except Exception as exc:
+            raise ExchangeError(f"Kraken ticker fetch failed: {exc}") from exc
+        return tickers
+
     def fetch_open_orders(self, symbols: Sequence[str]) -> Sequence[Order]:
         return self._fetch_orders("open", symbols, None)
 
@@ -265,9 +293,7 @@ def create_exchange_adapter(exchange: str) -> ExchangeAdapter:
             "COST_AVERAGE_OUT_EXCHANGE_API_KEY and "
             "COST_AVERAGE_OUT_EXCHANGE_API_SECRET"
         )
-    client = ccxt.kraken(
-        {"apiKey": api_key, "secret": secret, "enableRateLimit": True}
-    )
+    client = ccxt.kraken({"apiKey": api_key, "secret": secret, "enableRateLimit": True})
     return KrakenExchangeAdapter(cast(CcxtClient, client))
 
 
@@ -318,6 +344,15 @@ def _normalize_fill(raw: Mapping[str, Any], fallback_symbol: str) -> Fill:
         ),
         filled_at=timestamp,
         raw=dict(raw),
+    )
+
+
+def _normalize_ticker(raw: Mapping[str, Any], fallback_symbol: str) -> Ticker:
+    return Ticker(
+        symbol=str(raw.get("symbol") or fallback_symbol),
+        bid=_optional_decimal(raw.get("bid")),
+        ask=_optional_decimal(raw.get("ask")),
+        timestamp=_optional_datetime(raw.get("timestamp")),
     )
 
 

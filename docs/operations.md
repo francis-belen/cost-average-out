@@ -36,3 +36,16 @@ notifications.
 If a run fails after order submission, do not manually delete local state. Run
 `reconcile` first so the app can compare local records with exchange orders and
 fills.
+
+
+## Initial Snapshot
+
+Take an initial snapshot after the ledger is initialized and before relying on
+`percentage_basis: initial_snapshot`:
+
+```bash
+cost-average-out snapshot-balances --config config.yaml
+```
+
+The command is read-only against the exchange and writes only to the local SQLite
+ledger.

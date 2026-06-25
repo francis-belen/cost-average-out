@@ -7,6 +7,7 @@ read-only and exposes:
 
 - fetch balances,
 - fetch market metadata,
+- fetch ticker bid/ask quotes,
 - fetch open orders,
 - fetch recent closed orders and fills,
 - normalize exchange order states.
@@ -25,7 +26,21 @@ export COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
 
 The API key requires balance, order, and trade-history read permissions. Do not
 grant withdrawal permission. Order-creation permission is not needed for this
-read-only reconciliation phase.
+read-only reconciliation and planning phases.
+
+## Initial Balance Snapshot
+
+After initializing the ledger and configuring read-only credentials, store the
+baseline balance snapshot:
+
+```bash
+cost-average-out snapshot-balances --config config.yaml
+```
+
+The command validates configured markets first, then records balances with source
+`initial_snapshot`. This snapshot can be used by `percentage_basis:
+initial_snapshot` planning. It does not submit, cancel, or modify exchange
+orders.
 
 ## Reconciliation
 

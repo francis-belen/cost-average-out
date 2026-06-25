@@ -26,12 +26,20 @@ class FakeCcxtClient:
         self.open_orders: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.closed_orders: dict[str, Sequence[Mapping[str, Any]]] = {}
         self.trades: dict[str, Sequence[Mapping[str, Any]]] = {}
+        self.tickers: dict[str, Mapping[str, Any]] = {}
 
     def load_markets(self) -> Mapping[str, Mapping[str, Any]]:
         return self.markets
 
     def fetch_balance(self) -> Mapping[str, Any]:
         return self.balance
+
+    def fetch_ticker(
+        self,
+        symbol: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        return self.tickers[symbol]
 
     def fetch_open_orders(
         self,
@@ -81,6 +89,24 @@ def test_fetches_available_and_total_balances() -> None:
     assert str(balances["BTC"].available) == "0.5"
     assert str(balances["BTC"].total) == "0.75"
     assert str(balances["EUR"].available) == "100"
+
+
+def test_fetch_tickers_normalizes_bid_ask() -> None:
+    client = FakeCcxtClient()
+    client.tickers["BTC/EUR"] = {
+        "symbol": "BTC/EUR",
+        "bid": 50000,
+        "ask": 50050,
+        "timestamp": 1_893_456_000_000,
+    }
+    adapter = KrakenExchangeAdapter(client)
+
+    ticker = adapter.fetch_tickers(["BTC/EUR"])[0]
+
+    assert ticker.symbol == "BTC/EUR"
+    assert str(ticker.bid) == "50000"
+    assert str(ticker.ask) == "50050"
+    assert ticker.timestamp == datetime(2030, 1, 1, 0, tzinfo=UTC)
 
 
 def test_fetch_markets_rejects_unavailable_symbols() -> None:

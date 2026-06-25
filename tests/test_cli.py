@@ -22,6 +22,7 @@ def test_help_lists_validate_config_command() -> None:
 
     assert "schedule-status" in result.stdout
 
+
 def test_example_config_is_valid_offline() -> None:
     result = runner.invoke(
         app,
@@ -157,6 +158,25 @@ def test_help_lists_ledger_commands() -> None:
     assert "status" in result.stdout
 
 
+def test_snapshot_balances_command_records_initial_snapshot(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(app, ["snapshot-balances", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "Initial balance snapshot recorded: 2 balances" in result.stdout
+    assert "Markets validated: 2" in result.stdout
+
+
 def test_reconcile_command_uses_read_only_adapter(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -180,5 +200,6 @@ def test_reconcile_command_uses_read_only_adapter(
 def test_help_lists_reconcile_command() -> None:
     result = runner.invoke(app, ["--help"])
     assert "reconcile" in result.stdout
+    assert "snapshot-balances" in result.stdout
 
     assert result.exit_code == 0

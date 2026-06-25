@@ -8,7 +8,7 @@ import typer
 
 from cost_average_out.config import ConfigError, load_config
 from cost_average_out.exchange import ExchangeError, create_exchange_adapter
-from cost_average_out.ledger import Ledger, LedgerError
+from cost_average_out.ledger import BalanceInput, Ledger, LedgerError
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
@@ -34,9 +34,7 @@ def validate_config(
         typer.echo(f"Configuration invalid: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    trading_state = (
-        "enabled" if validated.safety.live_trading_enabled else "disabled"
-    )
+    trading_state = "enabled" if validated.safety.live_trading_enabled else "disabled"
     typer.echo(
         f"Configuration valid: {config} "
         f"(offline validation; live trading {trading_state})."
@@ -141,9 +139,7 @@ def status(
     for cycle_status, count in sorted(summary.cycle_counts.items()):
         typer.echo(f"  {cycle_status}: {count}")
     typer.echo(f"Planned orders: {summary.planned_order_count}")
-    typer.echo(
-        f"Unresolved exchange orders: {summary.unresolved_exchange_order_count}"
-    )
+    typer.echo(f"Unresolved exchange orders: {summary.unresolved_exchange_order_count}")
     if summary.last_cycle_id is None:
         typer.echo("Last cycle: none")
     else:
@@ -151,6 +147,48 @@ def status(
             f"Last cycle: {summary.last_cycle_id} "
             f"({summary.last_cycle_status}, {summary.last_cycle_scheduled_at})"
         )
+
+
+@app.command("snapshot-balances")
+def snapshot_balances(
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to the YAML configuration file.",
+            dir_okay=False,
+        ),
+    ] = Path("config.yaml"),
+) -> None:
+    """Store the initial exchange balance snapshot used by planning."""
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.summary()
+        adapter = create_exchange_adapter(validated.exchange)
+        markets = adapter.fetch_markets(validated.symbols)
+        balances = adapter.fetch_balances()
+        count = ledger.record_balances(
+            adapter.name,
+            datetime.now(UTC),
+            [
+                BalanceInput(
+                    asset=balance.asset,
+                    available=balance.available,
+                    total=balance.total,
+                )
+                for balance in balances
+            ],
+            "initial_snapshot",
+        )
+    except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Balance snapshot failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Initial balance snapshot recorded: {count} balances")
+    typer.echo(f"Markets validated: {len(markets)}")
+
 
 @app.command()
 def plan(config: str = "config.yaml") -> None:
@@ -162,6 +200,7 @@ def plan(config: str = "config.yaml") -> None:
 def run_once(config: str = "config.yaml") -> None:
     """Run one timer-friendly execution cycle."""
     typer.echo(f"run-once is not implemented yet: {config}")
+
 
 @app.command()
 def reconcile(

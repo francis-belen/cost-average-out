@@ -5,9 +5,18 @@ distribution.
 
 ## Status
 
-MVP implementation in progress. The CLI can validate config, initialize a local
-ledger, reconcile read-only exchange state, snapshot balances, plan sells, run
+MVP implementation is live-tested. The CLI can validate config, initialize a
+local ledger, reconcile exchange state, snapshot balances, plan sells, run
 dry-run cycles, and execute guarded live cycles when explicitly enabled.
+
+The first controlled Kraken live sell test completed successfully on 2026-06-25:
+three market sell orders were submitted, three fills were recorded, and
+post-submit reconciliation reported zero unresolved app-created orders.
+
+The application is production-capable for personal self-hosted use after the
+documented readiness checks pass. A specific deployment is production only after
+it is installed on the intended host with the intended schedule, credentials,
+systemd timer, and backups.
 
 ## Warning
 
@@ -63,7 +72,7 @@ Live execution is available only through `run-once --live` and is blocked unless
 first-live-sell confirmation is supplied.
 
 Live trading should remain disabled until configuration, exchange permissions,
-and reconciliation behavior are verified.
+sell sizing, and reconciliation behavior are verified.
 
 ## MVP Validation Checklist
 

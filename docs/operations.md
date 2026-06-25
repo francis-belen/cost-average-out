@@ -51,10 +51,21 @@ Check that:
 
 This checklist is read-only against the exchange except for local SQLite writes.
 
+## Production Readiness Status
+
+The application has passed its first controlled Kraken live sell test. On
+2026-06-25, a due cycle submitted three real market sell orders, recorded three
+fills, reconciled with zero unresolved app-created orders, and was stored locally
+as a completed cycle.
+
+That means the software is production-capable for personal self-hosted use. A
+specific installation is production only after it is deployed on the intended
+host with the intended config, schedule, credentials, timer, and backup routine.
+
 ## Production Readiness Plan
 
-Treat the current app as MVP/pre-release until one controlled live sell has been
-completed and reconciled. The safe progression is:
+For a new host, changed config, changed exchange key, or upgraded version, use
+this safe progression:
 
 1. Run the MVP validation checklist above with live trading disabled.
 2. Create a separate exchange API key for live testing. It may have balance,
@@ -107,10 +118,12 @@ host. Recommended baseline:
 - project-owned Python virtual environment,
 - `.env`, `config.yaml`, and SQLite database readable only by that user,
 - exchange API key scoped only to the required permissions and never withdrawal,
-- `systemd timer` running `run-once`,
+- `systemd timer` running `run-once`, initially with `--dry-run`,
 - daily SQLite backups copied off-host,
 - logs monitored through `journalctl`,
-- live mode enabled only after repeated dry-run validation.
+- live mode enabled only after repeated dry-run validation,
+- the temporary live-test schedule replaced with the intended production
+  schedule before unattended operation.
 
 This keeps credentials, local ledger state, scheduling, and backups isolated from
 other projects and reduces the blast radius of a host compromise.
@@ -192,7 +205,8 @@ cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
 Live execution is blocked when `live_trading_enabled` is false, `kill_switch` is
 true, a missed cycle requires manual approval, the plan has block reasons, or any
 app-created exchange order is unresolved. Submission timeouts are persisted as
-`unknown_requires_reconciliation`; reconcile before retrying.
+`unknown_requires_reconciliation`; reconcile before retrying. Non-timeout
+exchange rejections fail the local cycle without recording an exchange order.
 
 
 ## Notifications

@@ -49,3 +49,23 @@ cost-average-out snapshot-balances --config config.yaml
 
 The command is read-only against the exchange and writes only to the local SQLite
 ledger.
+
+
+## Dry Run
+
+Preview sell sizing and safety decisions without creating exchange orders:
+
+```bash
+cost-average-out plan --config config.yaml
+cost-average-out run-once --dry-run --config config.yaml
+```
+
+By default, dry runs do not write cycle/order simulation rows. To store a local
+simulation in the SQLite ledger, add `--persist-simulation`:
+
+```bash
+cost-average-out run-once --dry-run --persist-simulation --config config.yaml
+```
+
+The dry-run output includes planned quantities, estimated quote values,
+skip/block reasons, and a notification preview.

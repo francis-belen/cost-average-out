@@ -177,6 +177,114 @@ def test_snapshot_balances_command_records_initial_snapshot(
     assert "Markets validated: 2" in result.stdout
 
 
+def test_plan_command_outputs_safety_decisions(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00Z",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Execution blocked: no" in result.stdout
+    assert "BTC/EUR: status=planned" in result.stdout
+    assert "quantity=0.005" in result.stdout
+    assert "estimated_value=250" in result.stdout
+
+
+def test_run_once_requires_dry_run_flag(tmp_path: Path) -> None:
+    config, _ = write_config(tmp_path)
+
+    result = runner.invoke(app, ["run-once", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "Live run-once is not implemented yet; use --dry-run." in result.stderr
+
+
+def test_run_once_dry_run_writes_no_exchange_orders_by_default(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-once",
+            "--dry-run",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+    status = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "Dry run cycle status: due" in result.stdout
+    assert "Execution blocked: no" in result.stdout
+    assert "Notification preview: Dry run: ready;" in result.stdout
+    assert status.exit_code == 0
+    assert "Cycles: 0" in status.stdout
+    assert "Planned orders: 0" in status.stdout
+    assert "Unresolved exchange orders: 0" in status.stdout
+
+
+def test_run_once_dry_run_can_persist_simulation(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-once",
+            "--dry-run",
+            "--persist-simulation",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+    status = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "Simulation persisted: cao-2030-01-01-" in result.stdout
+    assert status.exit_code == 0
+    assert "Cycles: 1" in status.stdout
+    assert "Planned orders: 2" in status.stdout
+    assert "Unresolved exchange orders: 0" in status.stdout
+
+
 def test_reconcile_command_uses_read_only_adapter(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

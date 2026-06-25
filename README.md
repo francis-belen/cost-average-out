@@ -42,15 +42,17 @@ cost-average-out init-ledger --config config.yaml
 cost-average-out status --config config.yaml
 cost-average-out reconcile --config config.yaml
 cost-average-out snapshot-balances --config config.yaml
+cost-average-out plan --config config.yaml
+cost-average-out run-once --dry-run --config config.yaml
 ```
 
 Config validation is offline: it parses and validates the YAML file without
 loading credentials, contacting an exchange, or submitting orders.
 
-`snapshot-balances` is read-only: it validates allowlisted markets, fetches
-available and total balances, and stores an `initial_snapshot` in the local
-ledger. The full `plan` command and live execution workflows are not implemented
-yet.
+`snapshot-balances`, `plan`, and `run-once --dry-run` are read-only against the
+exchange. `plan` prints the next sell quantities and safety decisions.
+`run-once --dry-run` evaluates the timer cycle and can optionally persist a local
+simulation with `--persist-simulation`. Live execution is not implemented yet.
 
 Live trading should remain disabled until configuration, exchange permissions,
 and reconciliation behavior are verified.

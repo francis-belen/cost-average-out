@@ -7,8 +7,10 @@ from typing import Annotated
 import typer
 
 from cost_average_out.config import ConfigError, load_config
+from cost_average_out.cycle import PlanPreview, dry_run_once, preview_plan
 from cost_average_out.exchange import ExchangeError, create_exchange_adapter
 from cost_average_out.ledger import BalanceInput, Ledger, LedgerError
+from cost_average_out.planner import SellPlanItem
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
@@ -191,15 +193,129 @@ def snapshot_balances(
 
 
 @app.command()
-def plan(config: str = "config.yaml") -> None:
+def plan(
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to the YAML configuration file.",
+            dir_okay=False,
+        ),
+    ] = Path("config.yaml"),
+    at: Annotated[
+        str | None,
+        typer.Option(
+            "--at",
+            help="Price-plan timestamp for deterministic tests; defaults to now.",
+        ),
+    ] = None,
+) -> None:
     """Plan the next sell cycle without submitting exchange orders."""
-    typer.echo(f"plan is not implemented yet: {config}")
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.summary()
+        adapter = create_exchange_adapter(validated.exchange)
+        preview = preview_plan(
+            validated,
+            ledger,
+            adapter,
+            now=_parse_instant(at) if at is not None else datetime.now(UTC),
+        )
+    except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Plan failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    _echo_plan_preview(preview)
 
 
-@app.command()
-def run_once(config: str = "config.yaml") -> None:
+@app.command("run-once")
+def run_once(
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to the YAML configuration file.",
+            dir_okay=False,
+        ),
+    ] = Path("config.yaml"),
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Evaluate and preview a cycle without submitting exchange orders.",
+        ),
+    ] = False,
+    persist_simulation: Annotated[
+        bool,
+        typer.Option(
+            "--persist-simulation",
+            help="Persist the dry-run cycle and planned-order simulation locally.",
+        ),
+    ] = False,
+    at: Annotated[
+        str | None,
+        typer.Option(
+            "--at",
+            help="Evaluate at an ISO-8601 instant; defaults to the current time.",
+        ),
+    ] = None,
+) -> None:
     """Run one timer-friendly execution cycle."""
-    typer.echo(f"run-once is not implemented yet: {config}")
+    if not dry_run:
+        typer.echo("Live run-once is not implemented yet; use --dry-run.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        validated = load_config(config)
+        ledger = Ledger(validated.database_path.expanduser())
+        ledger.summary()
+        adapter = create_exchange_adapter(validated.exchange)
+        result = dry_run_once(
+            validated,
+            ledger,
+            adapter,
+            now=_parse_instant(at) if at is not None else datetime.now(UTC),
+            persist_simulation=persist_simulation,
+        )
+    except (ConfigError, ExchangeError, LedgerError, OSError, ValueError) as exc:
+        typer.echo(f"Dry run failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Dry run cycle status: {result.evaluation.status.value}")
+    typer.echo(f"Scheduled at: {result.evaluation.scheduled_at.isoformat()}")
+    typer.echo(f"Cycle ID: {result.evaluation.cycle_id}")
+    if result.persisted_cycle_id is not None:
+        typer.echo(f"Simulation persisted: {result.persisted_cycle_id}")
+    if result.preview is not None:
+        _echo_plan_preview(result.preview)
+    typer.echo(f"Notification preview: {result.notification_preview}")
+
+
+def _echo_plan_preview(preview: PlanPreview) -> None:
+    typer.echo(f"Observed at: {preview.sell_plan.observed_at.isoformat()}")
+    typer.echo(f"Execution blocked: {'yes' if preview.execution_blocked else 'no'}")
+    for reason in preview.block_reasons:
+        typer.echo(f"Block reason: {reason}")
+    typer.echo("Sell plan:")
+    for item in preview.sell_plan.items:
+        typer.echo(_format_plan_item(item))
+
+
+def _format_plan_item(item: SellPlanItem) -> str:
+    reason = f"; reason={item.reason}" if item.reason is not None else ""
+    return (
+        f"  {item.symbol}: status={item.status.value}; "
+        f"quantity={_format_decimal(item.quantity)}; "
+        f"estimated_value={_format_decimal(item.estimated_quote_value)}"
+        f"{reason}"
+    )
+
+
+def _format_decimal(value: object) -> str:
+    return format(value, "f")
 
 
 @app.command()

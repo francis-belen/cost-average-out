@@ -337,3 +337,47 @@ When in doubt, run:
 .venv/bin/cost-average-out plan --config config.yaml
 .venv/bin/cost-average-out run-once --dry-run --config config.yaml
 ```
+
+## Returning After A Long Break
+
+If you have not operated the app for months, treat it like a fresh production
+readiness review. Start with help and local state before considering live mode:
+
+```bash
+.venv/bin/cost-average-out --help
+.venv/bin/cost-average-out run-once --help
+.venv/bin/cost-average-out validate-config --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
+```
+
+Then load exchange credentials into the shell and run the read-only exchange
+checks:
+
+```bash
+set -a
+source .env
+set +a
+
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
+```
+
+Before any live run, confirm all of the following:
+
+- `Live Trading` is intentionally enabled only when you are ready.
+- `Kill Switch` is off.
+- `Ledger Status` is ready.
+- `Unresolved exchange orders`, `Unresolved app orders`, and `Unknown Orders`
+  are zero.
+- `Execution blocked` is `no`.
+- the schedule date, interval, symbols, percentage, and estimated values are
+  still intentional.
+- the exchange API key still has the intended permissions and no withdrawal
+  permission.
+
+Only after those checks should you consider:
+
+```bash
+.venv/bin/cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+```

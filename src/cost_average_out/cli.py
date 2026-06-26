@@ -60,10 +60,10 @@ def validate_config(
         f"Configuration valid: {config} "
         f"(offline validation; live trading {trading_state})."
     )
-    typer.echo(
-        f"Exchange: {validated.exchange}; quote: {validated.quote_currency}; "
-        f"timezone: {validated.timezone}; symbols: {', '.join(validated.symbols)}"
-    )
+    typer.echo(f"Exchange: {validated.exchange}")
+    typer.echo(f"Quote currency: {validated.quote_currency}")
+    typer.echo(f"Timezone: {validated.timezone}")
+    typer.echo(f"Symbols: {', '.join(validated.symbols)}")
 
 
 @app.command("schedule-status")

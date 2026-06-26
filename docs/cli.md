@@ -7,6 +7,24 @@ Use `cost-average-out --help` or `cost-average-out COMMAND --help` for the
 canonical option list installed on a host. This page documents what each command
 is for, what it can touch, and what an operator should inspect.
 
+If `cost-average-out` is not found, the console script is not on the current
+`PATH`. From the project directory, either activate the virtual environment or
+call the script directly:
+
+```bash
+source .venv/bin/activate
+cost-average-out --help
+
+.venv/bin/cost-average-out --help
+```
+
+The module entry point is also available and is useful for troubleshooting
+environment issues:
+
+```bash
+.venv/bin/python -m cost_average_out --help
+```
+
 ## Output Model
 
 Operator-facing commands print safety and status summaries. In an interactive

@@ -27,7 +27,7 @@ the exchange first.
 Create or upgrade the configured database with:
 
 ```bash
-cost-average-out init-ledger --config config.yaml
+.venv/bin/cost-average-out init-ledger --config config.yaml
 ```
 
 Migrations are versioned in `schema_migrations` and are safe to run repeatedly.
@@ -36,7 +36,7 @@ The command creates parent directories as needed.
 Inspect the ledger without modifying it:
 
 ```bash
-cost-average-out status --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
 ```
 
 Status reports cycle counts, the most recent cycle, planned-order count, and

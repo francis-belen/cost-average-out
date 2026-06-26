@@ -33,6 +33,31 @@ environment issues:
 .venv/bin/python -m cost_average_out --help
 ```
 
+## Credentials
+
+Commands that contact the exchange need credentials in the process environment.
+Copying `.env.example` to `.env` creates the file, but an interactive shell does
+not load it automatically. Edit `.env`, then export it before running
+exchange-backed commands:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+Required variables are:
+
+```bash
+COST_AVERAGE_OUT_EXCHANGE_API_KEY=...
+COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
+```
+
+`status`, `schedule-status`, `init-ledger`, `validate-config`, and
+`portfolio-history` do not contact the exchange. `reconcile`,
+`snapshot-balances`, `plan`, `run-once --dry-run` when a cycle is due,
+`run-once --live`, and `backfill-prices` do.
+
 ## Output Model
 
 Operator-facing commands print safety and status summaries. In an interactive

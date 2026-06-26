@@ -30,14 +30,14 @@ run-once
 Run this sequence after setup, upgrades, or before a release tag:
 
 ```bash
-cost-average-out validate-config --config config.yaml
-cost-average-out status --config config.yaml
-cost-average-out reconcile --config config.yaml
-cost-average-out snapshot-balances --config config.yaml
-cost-average-out plan --config config.yaml
-cost-average-out run-once --dry-run --config config.yaml
-cost-average-out backfill-prices --config config.yaml --days 7
-cost-average-out portfolio-history --config config.yaml --output history.json
+.venv/bin/cost-average-out validate-config --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 7
+.venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 Check that:
@@ -78,23 +78,23 @@ this safe progression:
 5. Run pre-live checks:
 
    ```bash
-   cost-average-out validate-config --config config.yaml
-   cost-average-out reconcile --config config.yaml
-   cost-average-out plan --config config.yaml
-   cost-average-out run-once --dry-run --config config.yaml
+   .venv/bin/cost-average-out validate-config --config config.yaml
+   .venv/bin/cost-average-out reconcile --config config.yaml
+   .venv/bin/cost-average-out plan --config config.yaml
+   .venv/bin/cost-average-out run-once --dry-run --config config.yaml
    ```
 
 6. Execute the first live sell only when the plan is intentional:
 
    ```bash
-   cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+   .venv/bin/cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
    ```
 
 7. Reconcile immediately:
 
    ```bash
-   cost-average-out reconcile --config config.yaml
-   cost-average-out status --config config.yaml
+   .venv/bin/cost-average-out reconcile --config config.yaml
+   .venv/bin/cost-average-out status --config config.yaml
    ```
 
 Production-ready criteria for personal use:
@@ -176,7 +176,7 @@ Take an initial snapshot after the ledger is initialized and before relying on
 `percentage_basis: initial_snapshot`:
 
 ```bash
-cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
 ```
 
 The command is read-only against the exchange and writes only to the local SQLite
@@ -188,15 +188,15 @@ ledger.
 Preview sell sizing and safety decisions without creating exchange orders:
 
 ```bash
-cost-average-out plan --config config.yaml
-cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
 ```
 
 By default, dry runs do not write cycle/order simulation rows. To store a local
 simulation in the SQLite ledger, add `--persist-simulation`:
 
 ```bash
-cost-average-out run-once --dry-run --persist-simulation --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --persist-simulation --config config.yaml
 ```
 
 The dry-run output includes planned quantities, estimated quote values,
@@ -208,14 +208,14 @@ skip/block reasons, and a notification preview.
 Live execution requires both config opt-in and an explicit CLI flag:
 
 ```bash
-cost-average-out run-once --live --config config.yaml
+.venv/bin/cost-average-out run-once --live --config config.yaml
 ```
 
 If `require_first_live_sell_confirmation` is true and no completed live cycle
 exists yet, add the explicit confirmation flag for the first live sell:
 
 ```bash
-cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+.venv/bin/cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
 ```
 
 Live execution is blocked when `live_trading_enabled` is false, `kill_switch` is
@@ -268,9 +268,9 @@ and dry-run execution have been validated.
 Backfill daily candles after reconciliation/snapshot data exists:
 
 ```bash
-cost-average-out init-ledger --config config.yaml
-cost-average-out backfill-prices --config config.yaml --days 90
-cost-average-out portfolio-history --config config.yaml --output history.json
+.venv/bin/cost-average-out init-ledger --config config.yaml
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 90
+.venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 `portfolio-history` exports chart-ready JSON rows with per-asset cached close

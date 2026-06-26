@@ -17,11 +17,17 @@ use a fake exchange without network access or credentials.
 
 ## Credentials
 
-Set credentials outside the YAML config:
+Set credentials outside the YAML config. For an interactive shell, export
+them directly or source `.env`:
 
 ```bash
 export COST_AVERAGE_OUT_EXCHANGE_API_KEY=...
 export COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
+
+# Or, from the project directory after editing .env:
+set -a
+source .env
+set +a
 ```
 
 The API key requires balance, order, and trade-history read permissions. Live
@@ -34,7 +40,7 @@ After initializing the ledger and configuring read-only credentials, store the
 baseline balance snapshot:
 
 ```bash
-cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
 ```
 
 The command validates configured markets first, then records balances with source
@@ -47,8 +53,8 @@ orders.
 Initialize the ledger, then reconcile:
 
 ```bash
-cost-average-out init-ledger --config config.yaml
-cost-average-out reconcile --config config.yaml --lookback-days 7
+.venv/bin/cost-average-out init-ledger --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml --lookback-days 7
 ```
 
 Reconciliation validates every allowlisted symbol before private account reads,

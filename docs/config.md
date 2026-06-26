@@ -30,13 +30,13 @@ must not automatically catch up a missed sell.
 Inspect the schedule without contacting an exchange:
 
 ```bash
-cost-average-out schedule-status --config config.yaml
+.venv/bin/cost-average-out schedule-status --config config.yaml
 ```
 
 For deterministic inspection, provide an offset-aware ISO-8601 instant:
 
 ```bash
-cost-average-out schedule-status --config config.yaml \
+.venv/bin/cost-average-out schedule-status --config config.yaml \
   --at 2030-01-01T12:00:00+01:00
 ```
 

@@ -47,6 +47,10 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 cp .env.example .env
 cp config.example.yaml config.yaml
+# Edit .env first, then export it into this shell for exchange commands.
+set -a
+source .env
+set +a
 .venv/bin/cost-average-out validate-config --config config.yaml
 .venv/bin/cost-average-out schedule-status --config config.yaml
 .venv/bin/cost-average-out init-ledger --config config.yaml
@@ -68,7 +72,8 @@ The CLI prints snapshot-style summaries for operator-facing commands such as
 panels. When output is redirected, captured by CI, or written to systemd
 journals, it falls back to plain text so scripts and logs remain easy to parse.
 
-`snapshot-balances`, `plan`, and `run-once --dry-run` are read-only against the
+`reconcile`, `snapshot-balances`, `plan`, and `run-once --dry-run` need
+exchange credentials in the process environment. They are read-only against the
 exchange. `plan` prints the next sell quantities and safety decisions.
 `run-once --dry-run` evaluates the timer cycle and can optionally persist a local
 simulation with `--persist-simulation`.

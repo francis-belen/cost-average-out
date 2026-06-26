@@ -62,6 +62,12 @@ cost-average-out portfolio-history --config config.yaml --output history.json
 Config validation is offline: it parses and validates the YAML file without
 loading credentials, contacting an exchange, or submitting orders.
 
+The CLI prints snapshot-style summaries for operator-facing commands such as
+`status`, `schedule-status`, `reconcile`, `snapshot-balances`, `plan`, and
+`run-once`. In an interactive terminal it uses restrained Rich tables and
+panels. When output is redirected, captured by CI, or written to systemd
+journals, it falls back to plain text so scripts and logs remain easy to parse.
+
 `snapshot-balances`, `plan`, and `run-once --dry-run` are read-only against the
 exchange. `plan` prints the next sell quantities and safety decisions.
 `run-once --dry-run` evaluates the timer cycle and can optionally persist a local
@@ -110,6 +116,7 @@ External contributions are not currently accepted. See [CONTRIBUTING.md](./CONTR
 ## Documentation
 
 - [Implementation Plan](./docs/implementation_plan.md)
+- [CLI Reference](./docs/cli.md)
 - [Config](./docs/config.md)
 - [Ledger](./docs/ledger.md)
 - [Safety](./docs/safety.md)

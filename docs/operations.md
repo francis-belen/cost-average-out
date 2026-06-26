@@ -128,6 +128,22 @@ host. Recommended baseline:
 This keeps credentials, local ledger state, scheduling, and backups isolated from
 other projects and reduces the blast radius of a host compromise.
 
+## CLI Output
+
+Cost Average Out is not a continuously running dashboard. Each command wakes up,
+performs one bounded task, prints a snapshot, records local state when required,
+and exits. Operator-facing commands highlight safety state such as live trading,
+kill switch, exchange, schedule, ledger status, open orders, unknown orders, last
+run, and next or relevant run where that information is available.
+
+In an interactive terminal, the CLI uses restrained Rich tables and panels for
+alignment. When stdout is redirected, captured by CI, or written to systemd
+journals, output falls back to plain text with stable labels such as `Execution
+blocked`, `Unresolved app orders`, and `Notification preview`. Do not rely on
+colors or terminal formatting for automation; rely on command exit codes and the
+plain text labels. See [CLI Reference](./cli.md) for every command and its
+side effects.
+
 ## Backups
 
 Back up the SQLite database before upgrades and at least daily during live use.

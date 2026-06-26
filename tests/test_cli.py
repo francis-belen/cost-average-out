@@ -146,6 +146,9 @@ def test_init_ledger_is_repeatable_and_status_is_ledger_backed(
     assert "Cycles: 0" in status.stdout
     assert "Planned orders: 0" in status.stdout
     assert "Unresolved exchange orders: 0" in status.stdout
+    assert "Quote currency: EUR" in status.stdout
+    assert "Timezone: Europe/Amsterdam" in status.stdout
+    assert "Symbols: BTC/EUR, ETH/EUR" in status.stdout
     assert "Schedule status:" in status.stdout
     assert "Next/relevant cycle ID: cao-" in status.stdout
     assert "Manual approval required:" in status.stdout

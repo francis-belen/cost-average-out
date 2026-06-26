@@ -72,6 +72,9 @@ class CliPresenter:
             [
                 KeyValue("Ledger", str(ledger_path)),
                 KeyValue("Exchange", config.exchange),
+                KeyValue("Quote currency", config.quote_currency),
+                KeyValue("Timezone", config.timezone),
+                KeyValue("Symbols", ", ".join(config.symbols)),
                 KeyValue(
                     "Live Trading",
                     enabled_disabled(config.safety.live_trading_enabled),

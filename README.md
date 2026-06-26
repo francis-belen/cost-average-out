@@ -47,16 +47,16 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 cp .env.example .env
 cp config.example.yaml config.yaml
-cost-average-out validate-config --config config.yaml
-cost-average-out schedule-status --config config.yaml
-cost-average-out init-ledger --config config.yaml
-cost-average-out status --config config.yaml
-cost-average-out reconcile --config config.yaml
-cost-average-out snapshot-balances --config config.yaml
-cost-average-out plan --config config.yaml
-cost-average-out run-once --dry-run --config config.yaml
-cost-average-out backfill-prices --config config.yaml --days 90
-cost-average-out portfolio-history --config config.yaml --output history.json
+.venv/bin/cost-average-out validate-config --config config.yaml
+.venv/bin/cost-average-out schedule-status --config config.yaml
+.venv/bin/cost-average-out init-ledger --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 90
+.venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 Config validation is offline: it parses and validates the YAML file without
@@ -85,14 +85,14 @@ sell sizing, and reconciliation behavior are verified.
 Before tagging or enabling live trading, run the safe release-gate workflow:
 
 ```bash
-cost-average-out validate-config --config config.yaml
-cost-average-out status --config config.yaml
-cost-average-out reconcile --config config.yaml
-cost-average-out snapshot-balances --config config.yaml
-cost-average-out plan --config config.yaml
-cost-average-out run-once --dry-run --config config.yaml
-cost-average-out backfill-prices --config config.yaml --days 7
-cost-average-out portfolio-history --config config.yaml --output history.json
+.venv/bin/cost-average-out validate-config --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 7
+.venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 Expected results: config is valid, unresolved exchange orders are zero, read-only
@@ -103,9 +103,9 @@ and configured sell sizes have been reviewed intentionally.
 ## Development Checks
 
 ```bash
-pytest
-ruff check .
-mypy
+.venv/bin/pytest -q
+.venv/bin/ruff check .
+.venv/bin/mypy
 ```
 
 ## Repository Policy

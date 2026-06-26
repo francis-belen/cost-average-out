@@ -8,14 +8,22 @@ canonical option list installed on a host. This page documents what each command
 is for, what it can touch, and what an operator should inspect.
 
 If `cost-average-out` is not found, the console script is not on the current
-`PATH`. From the project directory, either activate the virtual environment or
-call the script directly:
+`PATH`. From the project directory, call the script directly. This works even when
+activation or `PATH` is stale:
+
+```bash
+.venv/bin/cost-average-out --help
+.venv/bin/cost-average-out status --config config.yaml
+```
+
+If you prefer the shorter command, reactivate the virtual environment and verify
+the shell can find it:
 
 ```bash
 source .venv/bin/activate
+hash -r
+command -v cost-average-out
 cost-average-out --help
-
-.venv/bin/cost-average-out --help
 ```
 
 The module entry point is also available and is useful for troubleshooting
@@ -57,7 +65,7 @@ codes and plain labels such as `Execution blocked`, `Unresolved app orders`,
 ### `validate-config`
 
 ```bash
-cost-average-out validate-config --config config.yaml
+.venv/bin/cost-average-out validate-config --config config.yaml
 ```
 
 Validates the YAML config without loading credentials, contacting an exchange,
@@ -75,8 +83,8 @@ Inspect:
 ### `schedule-status`
 
 ```bash
-cost-average-out schedule-status --config config.yaml
-cost-average-out schedule-status --config config.yaml --at 2030-01-01T12:00:00+01:00
+.venv/bin/cost-average-out schedule-status --config config.yaml
+.venv/bin/cost-average-out schedule-status --config config.yaml --at 2030-01-01T12:00:00+01:00
 ```
 
 Evaluates the configured recurring schedule without reading the ledger or
@@ -95,7 +103,7 @@ Inspect:
 ### `init-ledger`
 
 ```bash
-cost-average-out init-ledger --config config.yaml
+.venv/bin/cost-average-out init-ledger --config config.yaml
 ```
 
 Creates or migrates the configured SQLite ledger. It does not contact an
@@ -109,7 +117,7 @@ Inspect:
 ### `status`
 
 ```bash
-cost-average-out status --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
 ```
 
 Reads the initialized SQLite ledger and prints the current application snapshot.
@@ -132,8 +140,8 @@ If unresolved or unknown orders are non-zero, reconcile before any live attempt.
 ### `reconcile`
 
 ```bash
-cost-average-out reconcile --config config.yaml
-cost-average-out reconcile --config config.yaml --lookback-days 14
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml --lookback-days 14
 ```
 
 Fetches balances, market metadata, open orders, recent orders, and recent fills
@@ -157,7 +165,7 @@ state has been understood.
 ### `snapshot-balances`
 
 ```bash
-cost-average-out snapshot-balances --config config.yaml
+.venv/bin/cost-average-out snapshot-balances --config config.yaml
 ```
 
 Fetches current exchange balances and stores them as the local
@@ -174,8 +182,8 @@ Inspect:
 ### `plan`
 
 ```bash
-cost-average-out plan --config config.yaml
-cost-average-out plan --config config.yaml --at 2030-01-01T00:00:00Z
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml --at 2030-01-01T00:00:00Z
 ```
 
 Builds a read-only sell-plan preview. It validates market metadata, reads
@@ -198,8 +206,8 @@ Any unexpected block reason should be understood before live execution.
 ### `run-once --dry-run`
 
 ```bash
-cost-average-out run-once --dry-run --config config.yaml
-cost-average-out run-once --dry-run --persist-simulation --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --persist-simulation --config config.yaml
 ```
 
 Evaluates one timer cycle without submitting exchange orders. If no cycle is
@@ -223,8 +231,8 @@ Inspect:
 ### `run-once --live`
 
 ```bash
-cost-average-out run-once --live --config config.yaml
-cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
+.venv/bin/cost-average-out run-once --live --config config.yaml
+.venv/bin/cost-average-out run-once --live --confirm-first-live-sell --config config.yaml
 ```
 
 Executes one guarded live cycle. This is the only command that can submit live
@@ -252,8 +260,8 @@ retrying.
 ### `backfill-prices`
 
 ```bash
-cost-average-out backfill-prices --config config.yaml --days 90
-cost-average-out backfill-prices --config config.yaml --days 30 --limit 100
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 90
+.venv/bin/cost-average-out backfill-prices --config config.yaml --days 30 --limit 100
 ```
 
 Fetches daily OHLCV candles from the exchange and stores them in SQLite. This is
@@ -268,8 +276,8 @@ Inspect:
 ### `portfolio-history`
 
 ```bash
-cost-average-out portfolio-history --config config.yaml
-cost-average-out portfolio-history --config config.yaml --output history.json
+.venv/bin/cost-average-out portfolio-history --config config.yaml
+.venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
 Exports chart-ready JSON from local ledger and cached candle data. It does not
@@ -299,8 +307,8 @@ Every operator workflow should make these signals visible before live execution:
 When in doubt, run:
 
 ```bash
-cost-average-out status --config config.yaml
-cost-average-out reconcile --config config.yaml
-cost-average-out plan --config config.yaml
-cost-average-out run-once --dry-run --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml
+.venv/bin/cost-average-out reconcile --config config.yaml
+.venv/bin/cost-average-out plan --config config.yaml
+.venv/bin/cost-average-out run-once --dry-run --config config.yaml
 ```

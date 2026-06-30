@@ -128,6 +128,147 @@ host. Recommended baseline:
 This keeps credentials, local ledger state, scheduling, and backups isolated from
 other projects and reduces the blast radius of a host compromise.
 
+## Deploy To A New VM
+
+Use this procedure for a fresh Linux VM. Keep the first deployment in dry-run
+mode until the timer, logs, credentials, schedule, and backups are verified.
+
+### 1. Prepare the host
+
+Create a dedicated Unix user and install the minimum runtime tools:
+
+```bash
+sudo adduser --system --group --home /opt/cost-average-out cost-average-out
+sudo apt update
+sudo apt install -y git python3 python3-venv sqlite3
+```
+
+`sqlite3` is not required by the app itself, but it is useful for local backup
+and restore checks.
+
+### 2. Install the app
+
+Clone the repository, create the virtual environment, and install the package:
+
+```bash
+sudo -u cost-average-out git clone <YOUR_REPO_URL> /opt/cost-average-out
+cd /opt/cost-average-out
+
+sudo -u cost-average-out python3 -m venv .venv
+sudo -u cost-average-out .venv/bin/python -m pip install --upgrade pip
+sudo -u cost-average-out .venv/bin/python -m pip install -e .
+```
+
+### 3. Configure secrets and runtime files
+
+Create `/opt/cost-average-out/config.yaml` from the known-good local config.
+Create `/opt/cost-average-out/.env` from `.env.example`, then fill in exchange
+credentials:
+
+```bash
+sudo -u cost-average-out cp .env.example .env
+sudo -u cost-average-out nano .env
+```
+
+Required values:
+
+```bash
+COST_AVERAGE_OUT_EXCHANGE_API_KEY=...
+COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
+COST_AVERAGE_OUT_CONFIG=/opt/cost-average-out/config.yaml
+```
+
+Lock down ownership and permissions:
+
+```bash
+sudo chown -R cost-average-out:cost-average-out /opt/cost-average-out
+sudo chmod 600 /opt/cost-average-out/.env /opt/cost-average-out/config.yaml
+sudo mkdir -p /opt/cost-average-out/data
+sudo chown cost-average-out:cost-average-out /opt/cost-average-out/data
+```
+
+The exchange API key should have only the permissions needed by the intended
+mode. It must not have withdrawal permission.
+
+### 4. Validate manually
+
+Run the safe checks as the deployment user:
+
+```bash
+cd /opt/cost-average-out
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out validate-config --config config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out init-ledger --config config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out status --config config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out reconcile --config config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out plan --config config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out run-once --dry-run --config config.yaml'
+```
+
+Do not continue if `status` reports unresolved or unknown orders, if
+`reconcile` reports `Execution blocked: yes`, or if the plan is not intentional.
+
+### 5. Install the systemd dry-run timer
+
+Install the example units and edit paths or schedule as needed:
+
+```bash
+sudo cp /opt/cost-average-out/docs/cost-average-out.service.example /etc/systemd/system/cost-average-out.service
+sudo cp /opt/cost-average-out/docs/cost-average-out.timer.example /etc/systemd/system/cost-average-out.timer
+sudo nano /etc/systemd/system/cost-average-out.service
+sudo nano /etc/systemd/system/cost-average-out.timer
+```
+
+Keep the service in dry-run mode first:
+
+```ini
+ExecStart=/opt/cost-average-out/.venv/bin/cost-average-out run-once --dry-run --config /opt/cost-average-out/config.yaml
+```
+
+Enable and inspect the timer:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now cost-average-out.timer
+systemctl list-timers cost-average-out.timer
+journalctl -u cost-average-out.service -n 100 --no-pager
+```
+
+### 6. Test backups
+
+Create a backup directory and run one manual backup:
+
+```bash
+sudo mkdir -p /opt/cost-average-out/backups
+sudo chown cost-average-out:cost-average-out /opt/cost-average-out/backups
+sudo -u cost-average-out sqlite3 /opt/cost-average-out/data/cost_average_out.sqlite3 ".backup '/opt/cost-average-out/backups/cost_average_out-test.sqlite3'"
+```
+
+Verify that the backup file exists and can be copied off-host. Do not enable
+unattended live execution before backup and restore have been tested.
+
+### 7. First live run
+
+Before live mode, rerun the pre-live checks and confirm the schedule, symbols,
+sell percentage, estimated values, unresolved orders, and unknown orders are all
+intentional.
+
+Set `safety.live_trading_enabled: true` only when ready. The first live run
+should be manual:
+
+```bash
+sudo -u cost-average-out bash -lc 'set -a; source /opt/cost-average-out/.env; set +a; /opt/cost-average-out/.venv/bin/cost-average-out run-once --live --confirm-first-live-sell --config /opt/cost-average-out/config.yaml'
+```
+
+Immediately reconcile and inspect status:
+
+```bash
+sudo -u cost-average-out bash -lc 'set -a; source /opt/cost-average-out/.env; set +a; /opt/cost-average-out/.venv/bin/cost-average-out reconcile --config /opt/cost-average-out/config.yaml'
+sudo -u cost-average-out bash -lc 'set -a; source /opt/cost-average-out/.env; set +a; /opt/cost-average-out/.venv/bin/cost-average-out status --config /opt/cost-average-out/config.yaml'
+```
+
+Only after the first live run reconciles cleanly should the systemd service be
+changed from `--dry-run` to `--live`.
+
 ## CLI Output
 
 Cost Average Out is not a continuously running dashboard. Each command wakes up,

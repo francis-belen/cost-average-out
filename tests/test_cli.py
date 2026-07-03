@@ -27,6 +27,11 @@ runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def assert_json_contract(payload: dict[str, object], command: str) -> None:
+    assert payload["schema_version"] == 1
+    assert payload["command"] == command
+
+
 def test_help_lists_validate_config_command() -> None:
     result = runner.invoke(app, ["--help"])
 
@@ -226,7 +231,6 @@ def test_plan_command_outputs_safety_decisions(
     assert "estimated_value=250" in result.stdout
 
 
-
 def test_schedule_status_json_output_is_deterministic() -> None:
     result = runner.invoke(
         app,
@@ -270,8 +274,7 @@ def test_status_json_output(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 1
-    assert payload["command"] == "status"
+    assert_json_contract(payload, "status")
     assert payload["config"]["exchange"] == "kraken"
     assert payload["config"]["symbols"] == ["BTC/EUR", "ETH/EUR"]
     assert payload["ledger"]["path"] == str(database)
@@ -279,7 +282,6 @@ def test_status_json_output(tmp_path: Path) -> None:
     assert payload["ledger"]["status"] == "ready"
     assert payload["ledger"]["unresolved_exchange_orders"] == 0
     assert payload["schedule"]["cycle_id"].startswith("cao-")
-
 
 
 def test_status_json_blocked_recommends_actual_config_path(tmp_path: Path) -> None:
@@ -301,7 +303,7 @@ def test_status_json_blocked_recommends_actual_config_path(tmp_path: Path) -> No
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 1
+    assert_json_contract(payload, "status")
     assert payload["ledger"]["status"] == "blocked"
     assert payload["blocked"] == {
         "reason": "Unresolved application-created exchange orders exist.",
@@ -328,6 +330,7 @@ def test_status_rich_blocked_recommends_actual_config_path(tmp_path: Path) -> No
     expected = f"Recommended action: cost-average-out reconcile --config {config}"
     assert expected in result.stdout
 
+
 def test_plan_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     config, _ = write_config(tmp_path)
     init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
@@ -352,8 +355,7 @@ def test_plan_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 1
-    assert payload["command"] == "plan"
+    assert_json_contract(payload, "plan")
     assert payload["execution_blocked"] is False
     assert payload["planned_orders"] == 1
     assert payload["sell_plan"][0] == {
@@ -382,8 +384,7 @@ def test_reconcile_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == 1
-    assert payload["command"] == "reconcile"
+    assert_json_contract(payload, "reconcile")
     assert payload["balances_recorded"] == 2
     assert payload["markets_validated"] == 2
     assert payload["execution_blocked"] is False
@@ -430,6 +431,7 @@ def test_json_output_has_no_rich_formatting_or_secrets(
     assert "secret-api-key" not in result.stdout
     assert "secret-api-secret" not in result.stdout
     assert "secret-webhook" not in result.stdout
+
 
 def test_run_once_requires_mode_flag(tmp_path: Path) -> None:
     config, _ = write_config(tmp_path)
@@ -566,7 +568,7 @@ def test_backfill_prices_and_portfolio_history_commands(
     assert "Candles fetched: 2" in backfill.stdout
     assert history.exit_code == 0
     payload = json.loads(history.stdout)
-    assert payload["schema_version"] == 1
+    assert_json_contract(payload, "portfolio-history")
     assert "quote_currency" in payload["rows"][0]
 
 

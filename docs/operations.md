@@ -417,7 +417,8 @@ Backfill daily candles after reconciliation/snapshot data exists:
 .venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
-`portfolio-history` exports chart-ready JSON with `schema_version` and a `rows`
-array containing per-asset cached close prices, quantities, values, total quote
-value, missing price symbols, and a valuation status. Missing candles are
+`portfolio-history` exports chart-ready JSON with `schema_version`, `command`,
+and a `rows` array containing per-asset cached close prices, quantities,
+values, total quote value, missing price symbols, and a valuation status.
+Missing candles are
 reported as `partial`; they are not silently ignored.

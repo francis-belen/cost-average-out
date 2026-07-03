@@ -342,8 +342,8 @@ Inspect:
 
 Exports chart-ready JSON from local ledger and cached candle data. It does not
 contact an exchange and does not write SQLite state. The payload contains
-`schema_version` and a `rows` array. If `--output` is omitted, JSON is written
-to stdout.
+`schema_version`, `command`, and a `rows` array. If `--output` is omitted, JSON
+is written to stdout.
 
 Inspect:
 

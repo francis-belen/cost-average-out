@@ -485,7 +485,11 @@ def portfolio_history_command(
         raise typer.Exit(code=1) from exc
 
     payload = json.dumps(
-        {"rows": rows, "schema_version": JSON_SCHEMA_VERSION},
+        {
+            "command": "portfolio-history",
+            "rows": rows,
+            "schema_version": JSON_SCHEMA_VERSION,
+        },
         indent=2,
         sort_keys=True,
     )

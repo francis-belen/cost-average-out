@@ -6,9 +6,12 @@ schedules, inspect exchange state, or make safety decisions.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -29,6 +32,11 @@ class KeyValue:
     value: str
 
 
+class OutputFormat(StrEnum):
+    RICH = "rich"
+    JSON = "json"
+
+
 class CliPresenter:
     """Render command snapshots as Rich output only when stdout is a terminal."""
 
@@ -38,6 +46,28 @@ class CliPresenter:
     @property
     def rich_enabled(self) -> bool:
         return self.console.is_terminal
+
+    def json(self, payload: dict[str, Any]) -> None:
+        self.console.file.write(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+
+    def schedule_status_payload(
+        self,
+        config: AppConfig,
+        evaluation: CycleEvaluation,
+    ) -> dict[str, Any]:
+        return {
+            "command": "schedule-status",
+            "cycle_id": evaluation.cycle_id,
+            "exchange": config.exchange,
+            "kill_switch": config.safety.kill_switch,
+            "live_trading_enabled": config.safety.live_trading_enabled,
+            "manual_approval_required": evaluation.requires_manual_approval,
+            "schedule_interval": config.cost_average_out.interval.value,
+            "scheduled_at": evaluation.scheduled_at.isoformat(),
+            "status": evaluation.status.value,
+        }
 
     def schedule_status(self, config: AppConfig, evaluation: CycleEvaluation) -> None:
         self._summary(
@@ -97,10 +127,6 @@ class CliPresenter:
                     str(summary.unresolved_exchange_order_count),
                 ),
                 KeyValue(
-                    "Unknown Orders",
-                    str(summary.unresolved_exchange_order_count),
-                ),
-                KeyValue(
                     "Ledger Status",
                     "blocked"
                     if summary.unresolved_exchange_order_count
@@ -119,6 +145,10 @@ class CliPresenter:
         else:
             self._line("Cycle Counts: none")
         if summary.unresolved_exchange_order_count:
+            self._blocked(
+                "Unresolved application-created exchange orders exist.",
+                "cost-average-out reconcile --config config.yaml",
+            )
             self._line(
                 "Warning: unresolved app-created exchange orders block execution"
             )
@@ -130,6 +160,39 @@ class CliPresenter:
                 f"{summary.last_cycle_id} "
                 f"({summary.last_cycle_status}, {summary.last_cycle_scheduled_at})"
             )
+
+    def status_payload(
+        self,
+        config: AppConfig,
+        ledger_path: Path,
+        summary: LedgerSummary,
+        evaluation: CycleEvaluation,
+    ) -> dict[str, Any]:
+        unresolved = summary.unresolved_exchange_order_count
+        payload: dict[str, Any] = {
+            "command": "status",
+            "config": _public_config_payload(config),
+            "ledger": {
+                "cycle_counts": dict(sorted(summary.cycle_counts.items())),
+                "last_cycle": {
+                    "cycle_id": summary.last_cycle_id,
+                    "scheduled_at": summary.last_cycle_scheduled_at,
+                    "status": summary.last_cycle_status,
+                },
+                "path": str(ledger_path),
+                "planned_orders": summary.planned_order_count,
+                "status": "blocked" if unresolved else "ready",
+                "total_cycles": sum(summary.cycle_counts.values()),
+                "unresolved_exchange_orders": unresolved,
+            },
+            "schedule": _cycle_evaluation_payload(evaluation),
+        }
+        if unresolved:
+            payload["blocked"] = _blocked_payload(
+                "Unresolved application-created exchange orders exist.",
+                "cost-average-out reconcile --config config.yaml",
+            )
+        return payload
 
     def snapshot_balances(
         self,
@@ -175,7 +238,38 @@ class CliPresenter:
         )
         for reason in preview.block_reasons:
             self._line(f"Block reason: {reason}")
+        if preview.execution_blocked:
+            self._blocked(
+                "; ".join(preview.block_reasons) or "Sell plan has blocked items.",
+                "cost-average-out reconcile --config config.yaml",
+            )
         self._plan_items(preview.sell_plan.items)
+
+    def plan_preview_payload(
+        self,
+        config: AppConfig,
+        preview: PlanPreview,
+    ) -> dict[str, Any]:
+        planned = len(preview.sell_plan.planned_items)
+        total = len(preview.sell_plan.items)
+        payload: dict[str, Any] = {
+            "block_reasons": list(preview.block_reasons),
+            "command": "plan",
+            "config": _public_config_payload(config),
+            "execution_blocked": preview.execution_blocked,
+            "observed_at": preview.sell_plan.observed_at.isoformat(),
+            "planned_orders": planned,
+            "sell_plan": [
+                _plan_item_payload(item) for item in preview.sell_plan.items
+            ],
+            "skipped_or_blocked": total - planned,
+        }
+        if preview.execution_blocked:
+            payload["blocked"] = _blocked_payload(
+                "; ".join(preview.block_reasons) or "Sell plan has blocked items.",
+                "cost-average-out reconcile --config config.yaml",
+            )
+        return payload
 
     def dry_run(self, config: AppConfig, result: DryRunResult) -> None:
         rows = [
@@ -214,7 +308,7 @@ class CliPresenter:
                 ),
                 KeyValue("Open Orders", str(result.reconciliation.open_order_count)),
                 KeyValue(
-                    "Unknown Orders",
+                    "Unresolved app orders",
                     str(result.reconciliation.unresolved_app_order_count),
                 ),
                 KeyValue("Exchange", config.exchange),
@@ -256,6 +350,37 @@ class CliPresenter:
                 KeyValue("Kill Switch", on_off(config.safety.kill_switch)),
             ],
         )
+        if result.execution_blocked:
+            self._blocked(
+                "Unresolved application-created exchange orders exist.",
+                "cost-average-out reconcile --config config.yaml",
+            )
+
+    def reconciliation_payload(
+        self,
+        config: AppConfig,
+        result: ReconciliationResult,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "balances_recorded": result.balance_count,
+            "command": "reconcile",
+            "config": _public_config_payload(config),
+            "execution_blocked": result.execution_blocked,
+            "markets_validated": result.market_count,
+            "matched_app_orders": result.matched_order_count,
+            "observed_at": result.observed_at.isoformat(),
+            "open_orders": result.open_order_count,
+            "recent_fills": result.recent_fill_count,
+            "recent_orders": result.recent_order_count,
+            "recorded_fills": result.recorded_fill_count,
+            "unresolved_app_orders": result.unresolved_app_order_count,
+        }
+        if result.execution_blocked:
+            payload["blocked"] = _blocked_payload(
+                "Unresolved application-created exchange orders exist.",
+                "cost-average-out reconcile --config config.yaml",
+            )
+        return payload
 
     def _summary(self, title: str, rows: Iterable[KeyValue]) -> None:
         items = list(rows)
@@ -297,6 +422,50 @@ class CliPresenter:
 
     def _line(self, value: str) -> None:
         self.console.print(value, highlight=False)
+
+    def _blocked(self, reason: str, recommended_command: str) -> None:
+        self._line("Blocked")
+        self._line(f"Reason: {reason}")
+        self._line(f"Recommended action: {recommended_command}")
+
+
+def _public_config_payload(config: AppConfig) -> dict[str, Any]:
+    return {
+        "exchange": config.exchange,
+        "kill_switch": config.safety.kill_switch,
+        "live_trading_enabled": config.safety.live_trading_enabled,
+        "quote_currency": config.quote_currency,
+        "symbols": list(config.symbols),
+        "timezone": config.timezone,
+    }
+
+
+def _cycle_evaluation_payload(evaluation: CycleEvaluation) -> dict[str, Any]:
+    return {
+        "cycle_id": evaluation.cycle_id,
+        "manual_approval_required": evaluation.requires_manual_approval,
+        "scheduled_at": evaluation.scheduled_at.isoformat(),
+        "status": evaluation.status.value,
+    }
+
+
+def _plan_item_payload(item: SellPlanItem) -> dict[str, Any]:
+    return {
+        "base_asset": item.base_asset,
+        "estimated_quote_value": format_decimal(item.estimated_quote_value),
+        "quantity": format_decimal(item.quantity),
+        "reason": item.reason,
+        "status": item.status.value,
+        "symbol": item.symbol,
+    }
+
+
+def _blocked_payload(reason: str, recommended_command: str) -> dict[str, str]:
+    return {
+        "reason": reason,
+        "recommended_command": recommended_command,
+        "status": "blocked",
+    }
 
 
 def format_plan_item_plain(item: SellPlanItem) -> str:

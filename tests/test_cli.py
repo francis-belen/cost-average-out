@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -221,6 +222,160 @@ def test_plan_command_outputs_safety_decisions(
     assert "quantity=0.005" in result.stdout
     assert "estimated_value=250" in result.stdout
 
+
+
+def test_schedule_status_json_output_is_deterministic() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "schedule-status",
+            "--config",
+            str(PROJECT_ROOT / "config.example.yaml"),
+            "--at",
+            "2029-12-31T22:00:00Z",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "command": "schedule-status",
+        "cycle_id": payload["cycle_id"],
+        "exchange": "kraken",
+        "kill_switch": False,
+        "live_trading_enabled": False,
+        "manual_approval_required": False,
+        "schedule_interval": "weekly",
+        "scheduled_at": "2030-01-01T00:00:00+01:00",
+        "status": "not_due",
+    }
+    assert payload["cycle_id"].startswith("cao-2030-01-01-")
+
+
+def test_status_json_output(tmp_path: Path) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        ["status", "--config", str(config), "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "status"
+    assert payload["config"]["exchange"] == "kraken"
+    assert payload["config"]["symbols"] == ["BTC/EUR", "ETH/EUR"]
+    assert payload["ledger"]["path"] == str(database)
+    assert payload["ledger"]["planned_orders"] == 0
+    assert payload["ledger"]["status"] == "ready"
+    assert payload["ledger"]["unresolved_exchange_orders"] == 0
+    assert payload["schedule"]["cycle_id"].startswith("cao-")
+
+
+def test_plan_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00Z",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "plan"
+    assert payload["execution_blocked"] is False
+    assert payload["planned_orders"] == 1
+    assert payload["sell_plan"][0] == {
+        "base_asset": "BTC",
+        "estimated_quote_value": "250",
+        "quantity": "0.005",
+        "reason": None,
+        "status": "planned",
+        "symbol": "BTC/EUR",
+    }
+
+
+def test_reconcile_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--config", str(config), "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "reconcile"
+    assert payload["balances_recorded"] == 2
+    assert payload["markets_validated"] == 2
+    assert payload["execution_blocked"] is False
+    assert payload["unresolved_app_orders"] == 0
+
+
+def test_invalid_output_value_is_rejected(tmp_path: Path) -> None:
+    config, _ = write_config(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["status", "--config", str(config), "--output", "yaml"],
+    )
+
+    assert result.exit_code != 0
+    assert "json" in result.stderr
+    assert "rich" in result.stderr
+
+
+def test_json_output_has_no_rich_formatting_or_secrets(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setenv("COST_AVERAGE_OUT_EXCHANGE_API_KEY", "secret-api-key")
+    monkeypatch.setenv("COST_AVERAGE_OUT_EXCHANGE_API_SECRET", "secret-api-secret")
+    monkeypatch.setenv(
+        "COST_AVERAGE_OUT_NOTIFICATION_WEBHOOK_URL",
+        "https://example.test/secret-webhook",
+    )
+
+    result = runner.invoke(
+        app,
+        ["status", "--config", str(config), "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    json.loads(result.stdout)
+    assert "\x1b" not in result.stdout
+    assert "╭" not in result.stdout
+    assert "│" not in result.stdout
+    assert "secret-api-key" not in result.stdout
+    assert "secret-api-secret" not in result.stdout
+    assert "secret-webhook" not in result.stdout
 
 def test_run_once_requires_mode_flag(tmp_path: Path) -> None:
     config, _ = write_config(tmp_path)

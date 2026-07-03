@@ -204,7 +204,7 @@ sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-a
 sudo -u cost-average-out bash -lc 'set -a; source .env; set +a; .venv/bin/cost-average-out run-once --dry-run --config config.yaml'
 ```
 
-Do not continue if `status` reports unresolved or unknown orders, if
+Do not continue if `status` reports unresolved exchange or app orders, if
 `reconcile` reports `Execution blocked: yes`, or if the plan is not intentional.
 
 ### 5. Install the systemd dry-run timer
@@ -248,9 +248,9 @@ unattended live execution before backup and restore have been tested.
 
 ### 7. First live run
 
-Before live mode, rerun the pre-live checks and confirm the schedule, symbols,
-sell percentage, estimated values, unresolved orders, and unknown orders are all
-intentional.
+Before live mode, rerun the pre-live checks. Confirm the schedule, symbols,
+sell percentage, and estimated values are intentional, and confirm there are no
+unresolved exchange or app orders.
 
 Set `safety.live_trading_enabled: true` only when ready. The first live run
 should be manual:
@@ -274,7 +274,7 @@ changed from `--dry-run` to `--live`.
 Cost Average Out is not a continuously running dashboard. Each command wakes up,
 performs one bounded task, prints a snapshot, records local state when required,
 and exits. Operator-facing commands highlight safety state such as live trading,
-kill switch, exchange, schedule, ledger status, open orders, unknown orders, last
+kill switch, exchange, schedule, ledger status, open orders, unresolved app orders, last
 run, and next or relevant run where that information is available.
 
 In an interactive terminal, the CLI uses restrained Rich tables and panels for
@@ -301,7 +301,7 @@ If a run fails after order submission, do not manually delete local state. Run
 `reconcile` first so the app can compare local records with exchange orders and
 fills.
 
-- Timeout: run `reconcile`, inspect `status`, and retry only after unknown orders
+- Timeout: run `reconcile`, inspect `status`, and retry only after unresolved app orders
   are resolved.
 - Partial fill: run `reconcile`; the app blocks further live execution while the
   app-created order remains open or partial.

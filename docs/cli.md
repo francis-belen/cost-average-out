@@ -65,9 +65,13 @@ terminal, output uses restrained Rich tables and panels for alignment. When
 stdout is redirected, captured by CI, or written to systemd journals, output
 falls back to plain text with stable labels.
 
-Do not automate against color or terminal formatting. For automation, use exit
-codes and plain labels such as `Execution blocked`, `Unresolved app orders`,
-`Dry run cycle status`, and `Notification preview`.
+`status`, `schedule-status`, `plan`, and `reconcile` also support
+`--output json` for CI, shell scripts, and AI agents. JSON output is deterministic,
+contains no Rich formatting, and includes only non-secret operator metadata.
+
+Do not automate against color or terminal formatting. For automation, use
+`--output json`, exit codes, and stable fields such as `execution_blocked`,
+`unresolved_app_orders`, `unresolved_exchange_orders`, and `ledger.status`.
 
 ## Command Summary
 
@@ -156,11 +160,10 @@ Inspect:
 - `Cycles`,
 - `Planned orders`,
 - `Unresolved exchange orders`,
-- `Unknown Orders`,
 - `Last cycle`,
 - next or relevant scheduled cycle.
 
-If unresolved or unknown orders are non-zero, reconcile before any live attempt.
+If unresolved exchange orders are non-zero, reconcile before any live attempt.
 
 ### `reconcile`
 
@@ -181,7 +184,6 @@ Inspect:
 - `Recent orders`,
 - `Recent fills`,
 - `Unresolved app orders`,
-- `Unknown Orders`,
 - `Execution blocked`.
 
 When `Execution blocked: yes`, do not run live execution until the unresolved
@@ -275,7 +277,7 @@ Inspect:
 - `Submitted orders`,
 - `Post-submit reconciliation blocked`,
 - `Open Orders`,
-- `Unknown Orders`,
+- `Unresolved app orders`,
 - `Notification preview`.
 
 If submission times out, the app records
@@ -325,7 +327,7 @@ Every operator workflow should make these signals visible before live execution:
 - `Schedule`: must be the intended recurring cadence.
 - `Ledger Status`: should be ready.
 - `Open Orders`: should be expected.
-- `Unknown Orders`: must be zero before a live retry.
+- `Unresolved app orders`: must be zero before a live retry.
 - `Last cycle`: should match the operator's understanding of the latest run.
 - next or relevant scheduled cycle: should match the intended timer cadence.
 
@@ -368,8 +370,7 @@ Before any live run, confirm all of the following:
 - `Live Trading` is intentionally enabled only when you are ready.
 - `Kill Switch` is off.
 - `Ledger Status` is ready.
-- `Unresolved exchange orders`, `Unresolved app orders`, and `Unknown Orders`
-  are zero.
+- `Unresolved exchange orders` and `Unresolved app orders` are zero.
 - `Execution blocked` is `no`.
 - the schedule date, interval, symbols, percentage, and estimated values are
   still intentional.

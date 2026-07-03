@@ -28,7 +28,7 @@ from cost_average_out.notifications import (
     create_notification_provider,
 )
 from cost_average_out.portfolio import backfill_prices, default_since, portfolio_history
-from cost_average_out.presentation import CliPresenter
+from cost_average_out.presentation import CliPresenter, OutputFormat
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
@@ -84,6 +84,10 @@ def schedule_status(
             help="Evaluate at an ISO-8601 instant; defaults to the current time.",
         ),
     ] = None,
+    output: Annotated[
+        OutputFormat,
+        typer.Option("--output", help="Output format."),
+    ] = OutputFormat.RICH,
 ) -> None:
     """Show the current schedule decision without external side effects."""
     try:
@@ -94,7 +98,10 @@ def schedule_status(
         typer.echo(f"Schedule evaluation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    presenter.schedule_status(validated, evaluation)
+    if output is OutputFormat.JSON:
+        presenter.json(presenter.schedule_status_payload(validated, evaluation))
+    else:
+        presenter.schedule_status(validated, evaluation)
 
 
 def _parse_instant(value: str) -> datetime:
@@ -139,6 +146,10 @@ def status(
             dir_okay=False,
         ),
     ] = Path("config.yaml"),
+    output: Annotated[
+        OutputFormat,
+        typer.Option("--output", help="Output format."),
+    ] = OutputFormat.RICH,
 ) -> None:
     """Show read-only application status from the SQLite ledger."""
     try:
@@ -150,7 +161,12 @@ def status(
         typer.echo(f"Status unavailable: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    presenter.status(validated, ledger.path, summary, evaluation)
+    if output is OutputFormat.JSON:
+        presenter.json(
+            presenter.status_payload(validated, ledger.path, summary, evaluation)
+        )
+    else:
+        presenter.status(validated, ledger.path, summary, evaluation)
 
 
 @app.command("snapshot-balances")
@@ -215,6 +231,10 @@ def plan(
             help="Price-plan timestamp for deterministic tests; defaults to now.",
         ),
     ] = None,
+    output: Annotated[
+        OutputFormat,
+        typer.Option("--output", help="Output format."),
+    ] = OutputFormat.RICH,
 ) -> None:
     """Plan the next sell cycle without submitting exchange orders."""
     try:
@@ -232,7 +252,10 @@ def plan(
         typer.echo(f"Plan failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    presenter.plan_preview(validated, preview)
+    if output is OutputFormat.JSON:
+        presenter.json(presenter.plan_preview_payload(validated, preview))
+    else:
+        presenter.plan_preview(validated, preview)
 
 
 @app.command("run-once")
@@ -482,6 +505,10 @@ def reconcile(
             help="Number of days of closed orders and fills to fetch.",
         ),
     ] = 7,
+    output: Annotated[
+        OutputFormat,
+        typer.Option("--output", help="Output format."),
+    ] = OutputFormat.RICH,
 ) -> None:
     """Reconcile read-only exchange state into the local ledger."""
     try:
@@ -499,4 +526,7 @@ def reconcile(
         typer.echo(f"Reconciliation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    presenter.reconciliation(validated, result)
+    if output is OutputFormat.JSON:
+        presenter.json(presenter.reconciliation_payload(validated, result))
+    else:
+        presenter.reconciliation(validated, result)

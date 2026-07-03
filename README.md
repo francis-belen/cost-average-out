@@ -68,9 +68,12 @@ loading credentials, contacting an exchange, or submitting orders.
 
 The CLI prints snapshot-style summaries for operator-facing commands such as
 `status`, `schedule-status`, `reconcile`, `snapshot-balances`, `plan`, and
-`run-once`. In an interactive terminal it uses restrained Rich tables and
-panels. When output is redirected, captured by CI, or written to systemd
-journals, it falls back to plain text so scripts and logs remain easy to parse.
+`run-once`. For commands that support output formats, `--output rich` is the
+default human-readable mode. In an interactive terminal it uses restrained Rich
+tables and panels; when stdout is redirected, captured by CI, or written to
+systemd journals, Rich falls back to plain text so scripts and logs remain easy
+to parse. Use `--output json` on supported operator commands for stable
+machine-readable output intended for scripts, CI, and AI agents.
 
 `reconcile`, `snapshot-balances`, `plan`, and `run-once --dry-run` need
 exchange credentials in the process environment. They are read-only against the

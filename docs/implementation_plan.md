@@ -1,6 +1,6 @@
 # Cost Average Out Implementation Plan
 
-Last updated: 2026-06-11
+Last updated: 2026-07-04
 
 ## Goal
 
@@ -33,7 +33,7 @@ The MVP is complete when a user can:
 - Market timing.
 - Automated rebalancing.
 - Cross-exchange routing.
-- Web dashboard before the CLI path is stable.
+- Built-in graphical or interactive UI.
 - Selling assets outside the configured allowlist.
 
 ## Phase 0: Repo Bootstrap
@@ -214,12 +214,12 @@ Deliverables:
 - Bounded OHLCV cache.
 - `backfill-prices` command.
 - Portfolio value reconstruction from balances/ledger and daily candles.
-- Chart-ready JSON or simple local read-only UI.
+- Chart-ready JSON export for external charting tools.
 
 Acceptance checks:
 
 - Candle backfill is incremental.
-- Portfolio history works without a full market database.
+- Portfolio history exports chart-ready JSON without a full market database.
 - Missing price data is visible as estimated or unavailable, not silently hidden.
 
 ## Release Gate

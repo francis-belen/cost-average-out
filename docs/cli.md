@@ -60,18 +60,47 @@ COST_AVERAGE_OUT_EXCHANGE_API_SECRET=...
 
 ## Output Model
 
-Operator-facing commands print safety and status summaries. In an interactive
-terminal, output uses restrained Rich tables and panels for alignment. When
-stdout is redirected, captured by CI, or written to systemd journals, output
-falls back to plain text with stable labels.
+Operator-facing commands print safety and status summaries. Where a command
+supports output formats, `--output rich` is the default human-readable mode. In
+an interactive terminal, Rich uses restrained tables and panels for alignment.
+When stdout is redirected, captured by CI, or written to systemd journals, Rich
+automatically falls back to plain text with stable labels.
 
 `status`, `schedule-status`, `plan`, and `reconcile` also support
 `--output json` for CI, shell scripts, and AI agents. JSON output is deterministic,
-contains no Rich formatting, and includes only non-secret operator metadata.
+contains a top-level `schema_version`, contains no Rich formatting, and includes
+only non-secret operator metadata.
 
 Do not automate against color or terminal formatting. For automation, use
-`--output json`, exit codes, and stable fields such as `execution_blocked`,
-`unresolved_app_orders`, `unresolved_exchange_orders`, and `ledger.status`.
+`--output json`, exit codes, and stable fields such as `schema_version`,
+`execution_blocked`, `unresolved_app_orders`, `unresolved_exchange_orders`, and
+`ledger.status`.
+
+## Command Groups
+
+These groups are documentation-only. Command names and behavior are unchanged.
+
+Observe:
+
+- `status`
+- `schedule-status`
+- `plan`
+- `portfolio-history`
+
+Operate:
+
+- `run-once`
+- `reconcile`
+- `snapshot-balances`
+
+Setup:
+
+- `validate-config`
+- `init-ledger`
+
+Maintenance:
+
+- `backfill-prices`
 
 ## Command Summary
 
@@ -114,6 +143,7 @@ Inspect:
 ```bash
 .venv/bin/cost-average-out schedule-status --config config.yaml
 .venv/bin/cost-average-out schedule-status --config config.yaml --at 2030-01-01T12:00:00+01:00
+.venv/bin/cost-average-out schedule-status --config config.yaml --output json
 ```
 
 Evaluates the configured recurring schedule without reading the ledger or
@@ -147,6 +177,7 @@ Inspect:
 
 ```bash
 .venv/bin/cost-average-out status --config config.yaml
+.venv/bin/cost-average-out status --config config.yaml --output json
 ```
 
 Reads the initialized SQLite ledger and prints the current application snapshot.
@@ -170,6 +201,7 @@ If unresolved exchange orders are non-zero, reconcile before any live attempt.
 ```bash
 .venv/bin/cost-average-out reconcile --config config.yaml
 .venv/bin/cost-average-out reconcile --config config.yaml --lookback-days 14
+.venv/bin/cost-average-out reconcile --config config.yaml --output json
 ```
 
 Fetches balances, market metadata, open orders, recent orders, and recent fills
@@ -211,6 +243,7 @@ Inspect:
 ```bash
 .venv/bin/cost-average-out plan --config config.yaml
 .venv/bin/cost-average-out plan --config config.yaml --at 2030-01-01T00:00:00Z
+.venv/bin/cost-average-out plan --config config.yaml --output json
 ```
 
 Builds a read-only sell-plan preview. It validates market metadata, reads
@@ -308,8 +341,9 @@ Inspect:
 ```
 
 Exports chart-ready JSON from local ledger and cached candle data. It does not
-contact an exchange and does not write SQLite state. If `--output` is omitted,
-JSON is written to stdout.
+contact an exchange and does not write SQLite state. The payload contains
+`schema_version` and a `rows` array. If `--output` is omitted, JSON is written
+to stdout.
 
 Inspect:
 

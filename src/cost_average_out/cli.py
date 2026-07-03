@@ -28,7 +28,11 @@ from cost_average_out.notifications import (
     create_notification_provider,
 )
 from cost_average_out.portfolio import backfill_prices, default_since, portfolio_history
-from cost_average_out.presentation import CliPresenter, OutputFormat
+from cost_average_out.presentation import (
+    JSON_SCHEMA_VERSION,
+    CliPresenter,
+    OutputFormat,
+)
 from cost_average_out.reconciliation import reconcile as reconcile_exchange
 from cost_average_out.scheduling import evaluate_cycle
 
@@ -163,10 +167,12 @@ def status(
 
     if output is OutputFormat.JSON:
         presenter.json(
-            presenter.status_payload(validated, ledger.path, summary, evaluation)
+            presenter.status_payload(
+                validated, ledger.path, summary, evaluation, config
+            )
         )
     else:
-        presenter.status(validated, ledger.path, summary, evaluation)
+        presenter.status(validated, ledger.path, summary, evaluation, config)
 
 
 @app.command("snapshot-balances")
@@ -253,9 +259,9 @@ def plan(
         raise typer.Exit(code=1) from exc
 
     if output is OutputFormat.JSON:
-        presenter.json(presenter.plan_preview_payload(validated, preview))
+        presenter.json(presenter.plan_preview_payload(validated, preview, config))
     else:
-        presenter.plan_preview(validated, preview)
+        presenter.plan_preview(validated, preview, config)
 
 
 @app.command("run-once")
@@ -478,7 +484,11 @@ def portfolio_history_command(
         typer.echo(f"Portfolio history failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    payload = json.dumps(rows, indent=2, sort_keys=True)
+    payload = json.dumps(
+        {"rows": rows, "schema_version": JSON_SCHEMA_VERSION},
+        indent=2,
+        sort_keys=True,
+    )
     if output is None:
         typer.echo(payload)
     else:
@@ -527,6 +537,6 @@ def reconcile(
         raise typer.Exit(code=1) from exc
 
     if output is OutputFormat.JSON:
-        presenter.json(presenter.reconciliation_payload(validated, result))
+        presenter.json(presenter.reconciliation_payload(validated, result, config))
     else:
-        presenter.reconciliation(validated, result)
+        presenter.reconciliation(validated, result, config)

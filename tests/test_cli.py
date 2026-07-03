@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import yaml
@@ -8,6 +10,7 @@ from pytest import MonkeyPatch
 from typer.testing import CliRunner
 
 from cost_average_out.cli import app
+from cost_average_out.ledger import Ledger, PlannedOrderInput
 from cost_average_out.notifications import NotificationMessage
 from tests.test_config import valid_config_data
 from tests.test_reconciliation import FakeExchangeAdapter
@@ -248,6 +251,7 @@ def test_schedule_status_json_output_is_deterministic() -> None:
         "live_trading_enabled": False,
         "manual_approval_required": False,
         "schedule_interval": "weekly",
+        "schema_version": 1,
         "scheduled_at": "2030-01-01T00:00:00+01:00",
         "status": "not_due",
     }
@@ -266,6 +270,7 @@ def test_status_json_output(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
     assert payload["command"] == "status"
     assert payload["config"]["exchange"] == "kraken"
     assert payload["config"]["symbols"] == ["BTC/EUR", "ETH/EUR"]
@@ -275,6 +280,53 @@ def test_status_json_output(tmp_path: Path) -> None:
     assert payload["ledger"]["unresolved_exchange_orders"] == 0
     assert payload["schedule"]["cycle_id"].startswith("cao-")
 
+
+
+def test_status_json_blocked_recommends_actual_config_path(tmp_path: Path) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    ledger = Ledger(database)
+    ledger.create_cycle_with_orders(
+        "cycle-1",
+        datetime(2030, 1, 1, tzinfo=UTC),
+        [PlannedOrderInput("BTC/EUR", Decimal("0.01"), Decimal("500"))],
+    )
+    ledger.register_exchange_order("cycle-1", "BTC/EUR", "kraken", "client-1")
+
+    result = runner.invoke(
+        app,
+        ["status", "--config", str(config), "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
+    assert payload["ledger"]["status"] == "blocked"
+    assert payload["blocked"] == {
+        "reason": "Unresolved application-created exchange orders exist.",
+        "recommended_command": f"cost-average-out reconcile --config {config}",
+        "status": "blocked",
+    }
+
+
+def test_status_rich_blocked_recommends_actual_config_path(tmp_path: Path) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    ledger = Ledger(database)
+    ledger.create_cycle_with_orders(
+        "cycle-1",
+        datetime(2030, 1, 1, tzinfo=UTC),
+        [PlannedOrderInput("BTC/EUR", Decimal("0.01"), Decimal("500"))],
+    )
+    ledger.register_exchange_order("cycle-1", "BTC/EUR", "kraken", "client-1")
+
+    result = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert result.exit_code == 0
+    expected = f"Recommended action: cost-average-out reconcile --config {config}"
+    assert expected in result.stdout
 
 def test_plan_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     config, _ = write_config(tmp_path)
@@ -300,6 +352,7 @@ def test_plan_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
     assert payload["command"] == "plan"
     assert payload["execution_blocked"] is False
     assert payload["planned_orders"] == 1
@@ -329,6 +382,7 @@ def test_reconcile_json_output(tmp_path: Path, monkeypatch: MonkeyPatch) -> None
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 1
     assert payload["command"] == "reconcile"
     assert payload["balances_recorded"] == 2
     assert payload["markets_validated"] == 2
@@ -511,7 +565,9 @@ def test_backfill_prices_and_portfolio_history_commands(
     assert backfill.exit_code == 0
     assert "Candles fetched: 2" in backfill.stdout
     assert history.exit_code == 0
-    assert "quote_currency" in history.stdout
+    payload = json.loads(history.stdout)
+    assert payload["schema_version"] == 1
+    assert "quote_currency" in payload["rows"][0]
 
 
 def test_reconcile_command_uses_read_only_adapter(

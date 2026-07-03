@@ -277,13 +277,16 @@ and exits. Operator-facing commands highlight safety state such as live trading,
 kill switch, exchange, schedule, ledger status, open orders, unresolved app orders, last
 run, and next or relevant run where that information is available.
 
-In an interactive terminal, the CLI uses restrained Rich tables and panels for
-alignment. When stdout is redirected, captured by CI, or written to systemd
-journals, output falls back to plain text with stable labels such as `Execution
-blocked`, `Unresolved app orders`, and `Notification preview`. Do not rely on
-colors or terminal formatting for automation; rely on command exit codes and the
-plain text labels. See [CLI Reference](./cli.md) for every command and its
-side effects.
+For commands that support output formats, `--output rich` is the default
+human-readable mode. In an interactive terminal, Rich uses restrained tables and
+panels for alignment. When stdout is redirected, captured by CI, or written to
+systemd journals, Rich automatically falls back to plain text with stable labels
+such as `Execution blocked`, `Unresolved app orders`, and `Notification preview`.
+
+Use `--output json` on supported operator commands when automating with scripts,
+CI, or AI agents. JSON output is deterministic, includes a top-level
+`schema_version`, contains no Rich formatting, and omits secrets. See
+[CLI Reference](./cli.md) for every command and its side effects.
 
 ## Backups
 
@@ -414,7 +417,7 @@ Backfill daily candles after reconciliation/snapshot data exists:
 .venv/bin/cost-average-out portfolio-history --config config.yaml --output history.json
 ```
 
-`portfolio-history` exports chart-ready JSON rows with per-asset cached close
-prices, quantities, values, total quote value, missing price symbols, and a
-valuation status. Missing candles are reported as `partial`; they are not silently
-ignored.
+`portfolio-history` exports chart-ready JSON with `schema_version` and a `rows`
+array containing per-asset cached close prices, quantities, values, total quote
+value, missing price symbols, and a valuation status. Missing candles are
+reported as `partial`; they are not silently ignored.

@@ -7,6 +7,7 @@ schedules, inspect exchange state, or make safety decisions.
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -37,6 +38,9 @@ class OutputFormat(StrEnum):
     JSON = "json"
 
 
+JSON_SCHEMA_VERSION = 1
+
+
 class CliPresenter:
     """Render command snapshots as Rich output only when stdout is a terminal."""
 
@@ -48,8 +52,10 @@ class CliPresenter:
         return self.console.is_terminal
 
     def json(self, payload: dict[str, Any]) -> None:
+        versioned_payload = {"schema_version": JSON_SCHEMA_VERSION, **payload}
         self.console.file.write(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+            json.dumps(versioned_payload, sort_keys=True, separators=(",", ":"))
+            + "\n"
         )
 
     def schedule_status_payload(
@@ -96,6 +102,7 @@ class CliPresenter:
         ledger_path: Path,
         summary: LedgerSummary,
         evaluation: CycleEvaluation,
+        config_path: Path = Path("config.yaml"),
     ) -> None:
         self._summary(
             "Application Status",
@@ -147,7 +154,7 @@ class CliPresenter:
         if summary.unresolved_exchange_order_count:
             self._blocked(
                 "Unresolved application-created exchange orders exist.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
             self._line(
                 "Warning: unresolved app-created exchange orders block execution"
@@ -167,6 +174,7 @@ class CliPresenter:
         ledger_path: Path,
         summary: LedgerSummary,
         evaluation: CycleEvaluation,
+        config_path: Path = Path("config.yaml"),
     ) -> dict[str, Any]:
         unresolved = summary.unresolved_exchange_order_count
         payload: dict[str, Any] = {
@@ -190,7 +198,7 @@ class CliPresenter:
         if unresolved:
             payload["blocked"] = _blocked_payload(
                 "Unresolved application-created exchange orders exist.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
         return payload
 
@@ -218,7 +226,12 @@ class CliPresenter:
             ],
         )
 
-    def plan_preview(self, config: AppConfig, preview: PlanPreview) -> None:
+    def plan_preview(
+        self,
+        config: AppConfig,
+        preview: PlanPreview,
+        config_path: Path = Path("config.yaml"),
+    ) -> None:
         planned = len(preview.sell_plan.planned_items)
         total = len(preview.sell_plan.items)
         self._summary(
@@ -241,7 +254,7 @@ class CliPresenter:
         if preview.execution_blocked:
             self._blocked(
                 "; ".join(preview.block_reasons) or "Sell plan has blocked items.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
         self._plan_items(preview.sell_plan.items)
 
@@ -249,6 +262,7 @@ class CliPresenter:
         self,
         config: AppConfig,
         preview: PlanPreview,
+        config_path: Path = Path("config.yaml"),
     ) -> dict[str, Any]:
         planned = len(preview.sell_plan.planned_items)
         total = len(preview.sell_plan.items)
@@ -267,7 +281,7 @@ class CliPresenter:
         if preview.execution_blocked:
             payload["blocked"] = _blocked_payload(
                 "; ".join(preview.block_reasons) or "Sell plan has blocked items.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
         return payload
 
@@ -325,6 +339,7 @@ class CliPresenter:
         self,
         config: AppConfig,
         result: ReconciliationResult,
+        config_path: Path = Path("config.yaml"),
     ) -> None:
         self._summary(
             "Reconciliation",
@@ -353,13 +368,14 @@ class CliPresenter:
         if result.execution_blocked:
             self._blocked(
                 "Unresolved application-created exchange orders exist.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
 
     def reconciliation_payload(
         self,
         config: AppConfig,
         result: ReconciliationResult,
+        config_path: Path = Path("config.yaml"),
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "balances_recorded": result.balance_count,
@@ -378,7 +394,7 @@ class CliPresenter:
         if result.execution_blocked:
             payload["blocked"] = _blocked_payload(
                 "Unresolved application-created exchange orders exist.",
-                "cost-average-out reconcile --config config.yaml",
+                _reconcile_command(config_path),
             )
         return payload
 
@@ -426,7 +442,7 @@ class CliPresenter:
     def _blocked(self, reason: str, recommended_command: str) -> None:
         self._line("Blocked")
         self._line(f"Reason: {reason}")
-        self._line(f"Recommended action: {recommended_command}")
+        self.console.file.write(f"Recommended action: {recommended_command}\n")
 
 
 def _public_config_payload(config: AppConfig) -> dict[str, Any]:
@@ -458,6 +474,10 @@ def _plan_item_payload(item: SellPlanItem) -> dict[str, Any]:
         "status": item.status.value,
         "symbol": item.symbol,
     }
+
+
+def _reconcile_command(config_path: Path) -> str:
+    return f"cost-average-out reconcile --config {shlex.quote(str(config_path))}"
 
 
 def _blocked_payload(reason: str, recommended_command: str) -> dict[str, str]:

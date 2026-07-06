@@ -49,9 +49,9 @@ def evaluate_activation(
     *,
     now: datetime,
     adapter: ExchangeAdapter | None = None,
-    persist: bool = True,
+    persist: bool = False,
 ) -> ActivationEvaluation:
-    """Evaluate the one-time activation gate and persist first activation."""
+    """Evaluate the one-time activation gate, optionally persisting first activation."""
 
     _require_aware(now)
     if ledger is not None:

@@ -68,6 +68,7 @@ def preview_plan(
     adapter: ExchangeAdapter,
     *,
     now: datetime | None = None,
+    persist_activation: bool = False,
 ) -> PlanPreview:
     """Build a read-only sell-plan preview."""
 
@@ -75,7 +76,13 @@ def preview_plan(
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
 
-    activation = evaluate_activation(config, ledger, now=observed_at, adapter=adapter)
+    activation = evaluate_activation(
+        config,
+        ledger,
+        now=observed_at,
+        adapter=adapter,
+        persist=persist_activation,
+    )
     if not activation.activated:
         return PlanPreview(
             sell_plan=SellPlan(observed_at=observed_at, items=()),
@@ -207,7 +214,13 @@ def live_run_once(
     evaluated_at = now or datetime.now(UTC)
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
-    activation = evaluate_activation(config, ledger, now=evaluated_at, adapter=adapter)
+    activation = evaluate_activation(
+        config,
+        ledger,
+        now=evaluated_at,
+        adapter=adapter,
+        persist=True,
+    )
     if not activation.activated:
         raise LiveExecutionBlockedError(
             f"program is waiting for activation: {activation.message}"

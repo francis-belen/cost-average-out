@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -31,6 +32,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def assert_json_contract(payload: dict[str, object], command: str) -> None:
     assert payload["schema_version"] == 1
     assert payload["command"] == command
+
+
+def activation_rows(database: Path) -> int:
+    with sqlite3.connect(database) as connection:
+        return int(
+            connection.execute("SELECT COUNT(*) FROM activation_state").fetchone()[0]
+        )
 
 
 def test_help_lists_validate_config_command() -> None:
@@ -166,6 +174,46 @@ def test_init_ledger_is_repeatable_and_status_is_ledger_backed(
     assert "Last cycle: none" in status.stdout
 
 
+def test_status_does_not_persist_activation_when_condition_is_met(
+    tmp_path: Path,
+) -> None:
+    config, database = write_config(tmp_path)
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["activation"]["date"] = "2020-01-01"
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+
+    result = runner.invoke(app, ["status", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "Activation status: active" in result.stdout
+    assert activation_rows(database) == 0
+
+
+def test_schedule_status_does_not_persist_activation_when_condition_is_met(
+    tmp_path: Path,
+) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "schedule-status",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Activation status: active" in result.stdout
+    assert activation_rows(database) == 0
+
+
 def test_status_reports_uninitialized_ledger(tmp_path: Path) -> None:
     config, database = write_config(tmp_path)
 
@@ -231,6 +279,34 @@ def test_plan_command_outputs_safety_decisions(
     assert "BTC/EUR: status=planned" in result.stdout
     assert "quantity=0.005" in result.stdout
     assert "estimated_value=250" in result.stdout
+
+
+def test_plan_does_not_persist_activation_when_condition_is_met(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Activation status: active" in result.stdout
+    assert activation_rows(database) == 0
 
 
 def test_schedule_status_json_output_is_deterministic() -> None:
@@ -471,6 +547,35 @@ def test_run_once_dry_run_writes_no_exchange_orders_by_default(
     assert "Cycles: 0" in status.stdout
     assert "Planned orders: 0" in status.stdout
     assert "Unresolved exchange orders: 0" in status.stdout
+
+
+def test_run_once_dry_run_does_not_persist_activation_when_condition_is_met(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, database = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-once",
+            "--dry-run",
+            "--config",
+            str(config),
+            "--at",
+            "2030-01-01T00:00:00+01:00",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Activation status: active" in result.stdout
+    assert activation_rows(database) == 0
 
 
 def test_run_once_dry_run_sends_notification_preview(

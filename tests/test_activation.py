@@ -138,6 +138,7 @@ def test_date_activation_reached_and_persisted(tmp_path: Path) -> None:
         app_config(),
         ledger,
         now=datetime(2030, 1, 1, tzinfo=UTC),
+        persist=True,
     )
 
     assert result.activated is True
@@ -168,6 +169,7 @@ def test_price_activation_reached_and_persisted(tmp_path: Path) -> None:
         ledger,
         now=datetime(2029, 12, 1, tzinfo=UTC),
         adapter=PriceAdapter(Decimal("120000")),
+        persist=True,
     )
 
     assert result.activated is True
@@ -180,11 +182,74 @@ def test_activation_idempotency(tmp_path: Path) -> None:
     ledger = initialized_ledger(tmp_path)
     cfg = app_config()
 
-    first = evaluate_activation(cfg, ledger, now=datetime(2030, 1, 1, tzinfo=UTC))
-    second = evaluate_activation(cfg, ledger, now=datetime(2030, 1, 2, tzinfo=UTC))
+    first = evaluate_activation(
+        cfg,
+        ledger,
+        now=datetime(2030, 1, 1, tzinfo=UTC),
+        persist=True,
+    )
+    second = evaluate_activation(
+        cfg,
+        ledger,
+        now=datetime(2030, 1, 2, tzinfo=UTC),
+        persist=True,
+    )
 
     assert first.activated_at == second.activated_at
     assert activation_row_count(ledger.path) == 1
+
+
+def test_evaluate_activation_does_not_persist_by_default(tmp_path: Path) -> None:
+    ledger = initialized_ledger(tmp_path)
+
+    result = evaluate_activation(
+        app_config(),
+        ledger,
+        now=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+
+    assert result.activated is True
+    assert result.activation_reason == "date_reached"
+    assert activation_row_count(ledger.path) == 0
+
+
+def test_live_run_persists_activation_when_condition_is_met(tmp_path: Path) -> None:
+    data = valid_config_data()
+    data["safety"]["live_trading_enabled"] = True
+    data["safety"]["require_first_live_sell_confirmation"] = False
+    cfg = app_config(data)
+    ledger = initialized_ledger(tmp_path)
+    adapter = PriceAdapter(Decimal("50000"))
+
+    result = live_run_once(
+        cfg,
+        ledger,
+        adapter,
+        now=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+
+    assert result.activation.activated is True
+    assert ledger.activation_state().activated is True
+    assert activation_row_count(ledger.path) == 1
+
+
+def test_dry_run_does_not_persist_activation_when_condition_is_met(
+    tmp_path: Path,
+) -> None:
+    cfg = app_config()
+    ledger = initialized_ledger(tmp_path)
+
+    result = dry_run_once(
+        cfg,
+        ledger,
+        PriceAdapter(Decimal("50000")),
+        now=datetime(2030, 1, 1, tzinfo=UTC),
+    )
+
+    assert result.activation.activated is True
+    assert activation_row_count(ledger.path) == 0
+    with sqlite3.connect(ledger.path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM cycles").fetchone()[0] == 0
 
 
 def test_run_once_live_blocked_before_activation(tmp_path: Path) -> None:

@@ -4,15 +4,45 @@ quote_currency: EUR
 timezone: Europe/Amsterdam
 database_path: ./data/cost_average_out.sqlite3
 
+# Activation controls when the recurring Cost Average Out program begins.
+# It does not decide whether an individual sell occurs; after activation, the
+# recurring schedule, safety gates, balances, and exchange state still decide
+# each cycle.
 activation:
+  # Supported: date, date_or_price.
   type: date
+  # For date activation, the program can begin on or after this local date.
   date: "2030-01-01"
 
+# Alternative: begin on the activation date or earlier if the reference price
+# reaches the threshold. Leave this block commented unless you want price-based
+# activation.
+# activation:
+#   type: date_or_price
+#   # Fallback date when the program begins even if the price trigger is not met.
+#   date: "2030-01-01"
+#   price_trigger:
+#     # Market pair used only to evaluate activation.
+#     reference_symbol: BTC/EUR
+#     # Supported condition: above_or_equal.
+#     condition: above_or_equal
+#     # Program can begin once the reference price is at or above this value.
+#     threshold: 120000
+
 cost_average_out:
+  # Recurring schedule anchor. Keep this aligned with activation.date for the
+  # canonical date-based setup.
+  #
+  # Backward compatibility: older configs without an activation block still use
+  # this start_date as date activation automatically.
   start_date: "2030-01-01"
+  # Optional final scheduled cycle date; null means no configured end date.
   end_date: null
+  # Supported: daily, weekly, monthly.
   interval: weekly
+  # Fraction of the chosen balance basis to sell each due cycle.
   percentage: 0.01
+  # Supported: current_balance, initial_snapshot.
   percentage_basis: current_balance
 
 symbols:

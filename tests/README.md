@@ -1,11 +1,11 @@
 # Tests
 
-Test coverage should start with fake exchange adapters and deterministic planner
-cases. Real exchange integration tests must be opt-in and must never run by
-default.
+Test coverage uses fake exchange adapters and deterministic planner, ledger,
+cycle, presentation, reconciliation, notification, and CLI cases. Real exchange
+integration tests must be opt-in and must never run by default.
 
-Run the Phase 0 test suite with:
+Run the test suite with:
 
 ```bash
-pytest
+.venv/bin/pytest -q
 ```

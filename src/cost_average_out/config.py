@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import re
-from datetime import date
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
@@ -41,13 +42,22 @@ class PercentageBasis(StrEnum):
     INITIAL_SNAPSHOT = "initial_snapshot"
 
 
+class ActivationType(StrEnum):
+    DATE = "date"
+    DATE_OR_PRICE = "date_or_price"
+
+
+class PriceTriggerCondition(StrEnum):
+    ABOVE_OR_EQUAL = "above_or_equal"
+
+
 class MissedCyclePolicy(StrEnum):
     REQUIRE_MANUAL_APPROVAL = "require_manual_approval"
 
 
 class CostAverageOutSettings(StrictModel):
-    start_date: date
-    end_date: date | None = None
+    start_date: dt.date
+    end_date: dt.date | None = None
     interval: Interval
     percentage: float = Field(gt=0, le=1)
     percentage_basis: PercentageBasis
@@ -56,6 +66,42 @@ class CostAverageOutSettings(StrictModel):
     def end_date_is_not_before_start_date(self) -> Self:
         if self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class PriceTriggerSettings(StrictModel):
+    reference_symbol: str
+    condition: PriceTriggerCondition
+    threshold: Decimal = Field(gt=0)
+
+    @field_validator("reference_symbol")
+    @classmethod
+    def reference_symbol_must_be_pair(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if re.fullmatch(r"[A-Z0-9]{2,20}/[A-Z0-9]{2,20}", normalized) is None:
+            raise ValueError(
+                "price_trigger.reference_symbol must use BASE/QUOTE format"
+            )
+        return normalized
+
+
+class ActivationSettings(StrictModel):
+    type: ActivationType
+    date: dt.date | None = None
+    price_trigger: PriceTriggerSettings | None = None
+
+    @model_validator(mode="after")
+    def required_fields_match_type(self) -> Self:
+        if self.type is ActivationType.DATE:
+            if self.date is None:
+                raise ValueError("date activation requires date")
+            if self.price_trigger is not None:
+                raise ValueError("date activation does not support price_trigger")
+        if self.type is ActivationType.DATE_OR_PRICE:
+            if self.date is None:
+                raise ValueError("date_or_price activation requires date")
+            if self.price_trigger is None:
+                raise ValueError("date_or_price activation requires price_trigger")
         return self
 
 
@@ -79,10 +125,25 @@ class AppConfig(StrictModel):
     quote_currency: str = Field(min_length=1)
     timezone: str = Field(min_length=1)
     database_path: Path
+    activation: ActivationSettings
     cost_average_out: CostAverageOutSettings
     symbols: list[str] = Field(min_length=1)
     safety: SafetySettings
     notifications: NotificationSettings
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_activation_from_legacy_start_date(cls, data: object) -> object:
+        if not isinstance(data, dict) or "activation" in data:
+            return data
+        settings = data.get("cost_average_out")
+        if isinstance(settings, dict) and settings.get("start_date") is not None:
+            data = dict(data)
+            data["activation"] = {
+                "type": ActivationType.DATE.value,
+                "date": settings["start_date"],
+            }
+        return data
 
     @field_validator("timezone")
     @classmethod

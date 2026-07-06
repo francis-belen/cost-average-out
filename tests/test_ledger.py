@@ -52,7 +52,7 @@ def test_migration_is_repeatable_and_creates_required_tables(tmp_path: Path) -> 
         "ledger_events",
         "balances",
     }.issubset(table_names(database))
-    assert row_count(database, "schema_migrations") == 2
+    assert row_count(database, "schema_migrations") == 3
 
 
 def test_summary_requires_initialized_ledger(tmp_path: Path) -> None:

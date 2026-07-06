@@ -23,6 +23,7 @@ class CapturingNotificationProvider:
     def send(self, message: NotificationMessage) -> None:
         self.messages.append(message)
 
+
 runner = CliRunner()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -90,10 +91,10 @@ def test_schedule_status_reports_not_due() -> None:
     )
 
     assert result.exit_code == 0
-    assert "Status: not_due" in result.stdout
-    assert "Scheduled at: 2030-01-01T00:00:00+01:00" in result.stdout
-    assert "Cycle ID: cao-2030-01-01-" in result.stdout
-    assert "Manual approval required: no" in result.stdout
+    assert "Status: inactive" in result.stdout
+    assert "Activation status: waiting_for_activation" in result.stdout
+    assert "Activation type: date" in result.stdout
+    assert "Message: waiting for activation date 2030-01-01" in result.stdout
 
 
 def test_schedule_status_reports_missed_manual_approval() -> None:
@@ -109,8 +110,9 @@ def test_schedule_status_reports_missed_manual_approval() -> None:
     )
 
     assert result.exit_code == 0
-    assert "Status: missed" in result.stdout
-    assert "Manual approval required: yes" in result.stdout
+    assert "Status: due" in result.stdout
+    assert "Activation status: active" in result.stdout
+    assert "Activation reason: date_reached" in result.stdout
 
 
 def test_schedule_status_rejects_naive_at_value() -> None:
@@ -159,8 +161,8 @@ def test_init_ledger_is_repeatable_and_status_is_ledger_backed(
     assert "Timezone: Europe/Amsterdam" in status.stdout
     assert "Symbols: BTC/EUR, ETH/EUR" in status.stdout
     assert "Schedule status:" in status.stdout
-    assert "Next/relevant cycle ID: cao-" in status.stdout
-    assert "Manual approval required:" in status.stdout
+    assert "Next/relevant cycle ID: none" in status.stdout
+    assert "Activation status: waiting_for_activation" in status.stdout
     assert "Last cycle: none" in status.stdout
 
 
@@ -247,19 +249,12 @@ def test_schedule_status_json_output_is_deterministic() -> None:
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload == {
-        "command": "schedule-status",
-        "cycle_id": payload["cycle_id"],
-        "exchange": "kraken",
-        "kill_switch": False,
-        "live_trading_enabled": False,
-        "manual_approval_required": False,
-        "schedule_interval": "weekly",
-        "schema_version": 1,
-        "scheduled_at": "2030-01-01T00:00:00+01:00",
-        "status": "not_due",
-    }
-    assert payload["cycle_id"].startswith("cao-2030-01-01-")
+    assert_json_contract(payload, "schedule-status")
+    assert payload["status"] == "inactive"
+    assert payload["activation"]["activated"] is False
+    assert payload["activation"]["activation_status"] == "waiting_for_activation"
+    assert payload["activation"]["activation_type"] == "date"
+    assert "cycle_id" not in payload
 
 
 def test_status_json_output(tmp_path: Path) -> None:
@@ -281,7 +276,8 @@ def test_status_json_output(tmp_path: Path) -> None:
     assert payload["ledger"]["planned_orders"] == 0
     assert payload["ledger"]["status"] == "ready"
     assert payload["ledger"]["unresolved_exchange_orders"] == 0
-    assert payload["schedule"]["cycle_id"].startswith("cao-")
+    assert payload["schedule"] is None
+    assert payload["activation"]["activation_status"] == "waiting_for_activation"
 
 
 def test_status_json_blocked_recommends_actual_config_path(tmp_path: Path) -> None:
@@ -544,6 +540,41 @@ def test_run_once_dry_run_can_persist_simulation(
     assert "Cycles: 1" in status.stdout
     assert "Planned orders: 2" in status.stdout
     assert "Unresolved exchange orders: 0" in status.stdout
+
+
+def test_run_once_dry_run_json_includes_activation_object(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    config, _ = write_config(tmp_path)
+    init_result = runner.invoke(app, ["init-ledger", "--config", str(config)])
+    assert init_result.exit_code == 0
+    monkeypatch.setattr(
+        "cost_average_out.cli.create_exchange_adapter",
+        lambda exchange: FakeExchangeAdapter(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run-once",
+            "--dry-run",
+            "--config",
+            str(config),
+            "--at",
+            "2029-12-01T00:00:00Z",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert_json_contract(payload, "run-once")
+    assert payload["activation"]["activated"] is False
+    assert payload["activation"]["activation_status"] == "waiting_for_activation"
+    assert payload["schedule"] is None
+    assert payload["sell_plan"] == []
 
 
 def test_backfill_prices_and_portfolio_history_commands(

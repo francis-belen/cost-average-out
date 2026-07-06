@@ -6,6 +6,7 @@ from io import StringIO
 
 from rich.console import Console
 
+from cost_average_out.activation import evaluate_activation
 from cost_average_out.config import AppConfig
 from cost_average_out.planner import PlanItemStatus, SellPlanItem
 from cost_average_out.presentation import CliPresenter, format_plan_item_plain
@@ -41,9 +42,17 @@ def test_presenter_plain_schedule_status_includes_safety_snapshot() -> None:
     output = StringIO()
     presenter = CliPresenter(Console(file=output, force_terminal=False))
 
-    presenter.schedule_status(config, evaluation)
+    activation = evaluate_activation(
+        config,
+        None,
+        now=datetime.fromisoformat("2030-01-01T00:00:00+01:00"),
+        persist=False,
+    )
+
+    presenter.schedule_status(config, evaluation, activation)
 
     assert "Status: not_due" in output.getvalue()
+    assert "Activation status: active" in output.getvalue()
     assert "Exchange: kraken" in output.getvalue()
     assert "Live Trading: disabled" in output.getvalue()
     assert "Kill Switch: off" in output.getvalue()

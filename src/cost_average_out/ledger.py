@@ -128,6 +128,27 @@ class PriceCandle:
 
 
 @dataclass(frozen=True)
+class ActivationInput:
+    activated_at: datetime
+    activation_type: str
+    activation_reason: str
+    reference_symbol: str | None = None
+    reference_price: Decimal | None = None
+    threshold: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class ActivationRecord:
+    activated: bool
+    activated_at: datetime | None
+    activation_type: str | None
+    activation_reason: str | None
+    reference_symbol: str | None
+    reference_price: Decimal | None
+    threshold: Decimal | None
+
+
+@dataclass(frozen=True)
 class LedgerSummary:
     cycle_counts: dict[str, int]
     last_cycle_id: str | None
@@ -159,6 +180,24 @@ _MIGRATION_2 = (
         "CREATE INDEX idx_price_candles_lookup "
         "ON price_candles(symbol, timeframe, opened_at)"
     ),
+)
+
+
+_MIGRATION_3 = (
+    """
+    CREATE TABLE activation_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        activated INTEGER NOT NULL CHECK (activated IN (0, 1)),
+        activated_at TEXT,
+        activation_type TEXT,
+        activation_reason TEXT,
+        reference_symbol TEXT,
+        reference_price TEXT,
+        threshold TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -314,6 +353,24 @@ class Ledger:
                     """
                     INSERT INTO app_metadata(key, value, updated_at)
                     VALUES('schema_version', '2', ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (now,),
+                )
+            if 3 not in applied:
+                for statement in _MIGRATION_3:
+                    connection.execute(statement)
+                now = _utc_now()
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES(3, ?)",
+                    (now,),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO app_metadata(key, value, updated_at)
+                    VALUES('schema_version', '3', ?)
                     ON CONFLICT(key) DO UPDATE SET
                         value = excluded.value,
                         updated_at = excluded.updated_at
@@ -708,7 +765,6 @@ class Ledger:
             recorded_fill_count=recorded_fill_count,
         )
 
-
     def record_price_candles(self, candles: Sequence[CandleInput]) -> int:
         """Insert or update cached OHLCV candles."""
 
@@ -850,6 +906,67 @@ class Ledger:
                 (exchange, exchange_order_id),
             ).fetchone()
         return cast(tuple[Any, ...] | None, row)
+
+    def activation_state(self) -> ActivationRecord:
+        """Return persisted one-time activation state, defaulting to inactive."""
+
+        if not self.path.is_file():
+            raise LedgerNotInitializedError(f"ledger does not exist: {self.path}")
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    """
+                    SELECT activated, activated_at, activation_type, activation_reason,
+                           reference_symbol, reference_price, threshold
+                    FROM activation_state
+                    WHERE id = 1
+                    """
+                ).fetchone()
+        except sqlite3.OperationalError as exc:
+            raise LedgerNotInitializedError("ledger migrations are incomplete") from exc
+
+        if row is None:
+            return ActivationRecord(False, None, None, None, None, None, None)
+        activated_at = datetime.fromisoformat(str(row[1])) if row[1] else None
+        return ActivationRecord(
+            activated=bool(row[0]),
+            activated_at=activated_at,
+            activation_type=str(row[2]) if row[2] is not None else None,
+            activation_reason=str(row[3]) if row[3] is not None else None,
+            reference_symbol=str(row[4]) if row[4] is not None else None,
+            reference_price=Decimal(str(row[5])) if row[5] is not None else None,
+            threshold=Decimal(str(row[6])) if row[6] is not None else None,
+        )
+
+    def record_activation(self, activation: ActivationInput) -> ActivationRecord:
+        """Persist first activation exactly once and return the stored row."""
+
+        self._require_aware(activation.activated_at)
+        now = _utc_now()
+        with self._connection() as connection, connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO activation_state(
+                    id, activated, activated_at, activation_type, activation_reason,
+                    reference_symbol, reference_price, threshold, created_at, updated_at
+                ) VALUES(1, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    activation.activated_at.astimezone(UTC).isoformat(),
+                    activation.activation_type,
+                    activation.activation_reason,
+                    activation.reference_symbol,
+                    str(activation.reference_price)
+                    if activation.reference_price is not None
+                    else None,
+                    str(activation.threshold)
+                    if activation.threshold is not None
+                    else None,
+                    now,
+                    now,
+                ),
+            )
+        return self.activation_state()
 
     def summary(self) -> LedgerSummary:
         """Return a read-only status summary from the initialized ledger."""

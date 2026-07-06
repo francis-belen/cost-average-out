@@ -27,7 +27,12 @@ class CycleEvaluation:
     requires_manual_approval: bool
 
 
-def evaluate_cycle(config: AppConfig, now: datetime) -> CycleEvaluation:
+def evaluate_cycle(
+    config: AppConfig,
+    now: datetime,
+    *,
+    activation_time: datetime | None = None,
+) -> CycleEvaluation:
     """Evaluate the current cycle without reading or writing external state."""
 
     if now.tzinfo is None or now.utcoffset() is None:
@@ -35,7 +40,16 @@ def evaluate_cycle(config: AppConfig, now: datetime) -> CycleEvaluation:
 
     timezone = ZoneInfo(config.timezone)
     local_date = now.astimezone(timezone).date()
-    scheduled_date = _relevant_schedule_date(config, local_date)
+    effective_config = config
+    if activation_time is not None:
+        if activation_time.tzinfo is None or activation_time.utcoffset() is None:
+            raise ValueError("activation_time must be timezone-aware")
+        activation_date = activation_time.astimezone(timezone).date()
+        effective_settings = config.cost_average_out.model_copy(
+            update={"start_date": activation_date}
+        )
+        effective_config = replace_config_settings(config, effective_settings)
+    scheduled_date = _relevant_schedule_date(effective_config, local_date)
     scheduled_at = datetime.combine(
         scheduled_date,
         datetime.min.time(),
@@ -57,7 +71,7 @@ def evaluate_cycle(config: AppConfig, now: datetime) -> CycleEvaluation:
     return CycleEvaluation(
         status=status,
         scheduled_at=scheduled_at,
-        cycle_id=cycle_id(config, scheduled_at),
+        cycle_id=cycle_id(effective_config, scheduled_at),
         requires_manual_approval=requires_manual_approval,
     )
 
@@ -118,3 +132,14 @@ def _add_months(start: date, months: int) -> date:
     month = zero_based_month + 1
     day = min(start.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
+
+
+def replace_config_settings(
+    config: AppConfig,
+    settings: object,
+) -> AppConfig:
+    """Return a validated config copy with a different schedule anchor."""
+
+    if not hasattr(settings, "model_dump"):
+        raise TypeError("settings must be a pydantic settings model")
+    return config.model_copy(update={"cost_average_out": settings})

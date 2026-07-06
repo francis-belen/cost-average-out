@@ -16,6 +16,7 @@ def valid_config_data() -> dict[str, Any]:
         "quote_currency": "EUR",
         "timezone": "Europe/Amsterdam",
         "database_path": "./data/cost_average_out.sqlite3",
+        "activation": {"type": "date", "date": "2030-01-01"},
         "cost_average_out": {
             "start_date": "2030-01-01",
             "end_date": None,

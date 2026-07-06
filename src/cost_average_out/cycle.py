@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
+from cost_average_out.activation import ActivationEvaluation, evaluate_activation
 from cost_average_out.config import AppConfig, PercentageBasis
 from cost_average_out.exchange import (
     APP_CLIENT_ORDER_PREFIX,
@@ -36,6 +37,7 @@ class PlanPreview:
     sell_plan: SellPlan
     execution_blocked: bool
     block_reasons: tuple[str, ...]
+    activation: ActivationEvaluation | None = None
 
 
 class LiveExecutionBlockedError(RuntimeError):
@@ -45,6 +47,7 @@ class LiveExecutionBlockedError(RuntimeError):
 @dataclass(frozen=True)
 class LiveRunResult:
     evaluation: CycleEvaluation
+    activation: ActivationEvaluation
     submitted_order_count: int
     reconciliation: ReconciliationResult
     notification_preview: str
@@ -52,7 +55,8 @@ class LiveRunResult:
 
 @dataclass(frozen=True)
 class DryRunResult:
-    evaluation: CycleEvaluation
+    evaluation: CycleEvaluation | None
+    activation: ActivationEvaluation
     preview: PlanPreview | None
     persisted_cycle_id: str | None
     notification_preview: str
@@ -70,6 +74,15 @@ def preview_plan(
     observed_at = now or datetime.now(UTC)
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
+
+    activation = evaluate_activation(config, ledger, now=observed_at, adapter=adapter)
+    if not activation.activated:
+        return PlanPreview(
+            sell_plan=SellPlan(observed_at=observed_at, items=()),
+            execution_blocked=True,
+            block_reasons=(activation.message,),
+            activation=activation,
+        )
 
     markets = adapter.fetch_markets(config.symbols)
     balances = adapter.fetch_balances()
@@ -104,6 +117,7 @@ def preview_plan(
         sell_plan=sell_plan,
         execution_blocked=bool(block_reasons),
         block_reasons=tuple(block_reasons),
+        activation=activation,
     )
 
 
@@ -121,10 +135,27 @@ def dry_run_once(
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
 
-    evaluation = evaluate_cycle(config, evaluated_at)
+    preview = preview_plan(config, ledger, adapter, now=evaluated_at)
+    activation = preview.activation
+    assert activation is not None
+    if not activation.activated:
+        return DryRunResult(
+            evaluation=None,
+            activation=activation,
+            preview=preview,
+            persisted_cycle_id=None,
+            notification_preview=f"Dry run: inactive; {activation.message}.",
+        )
+
+    evaluation = evaluate_cycle(
+        config,
+        evaluated_at,
+        activation_time=activation.activated_at,
+    )
     if evaluation.status is CycleStatus.NOT_DUE:
         return DryRunResult(
             evaluation=evaluation,
+            activation=activation,
             preview=None,
             persisted_cycle_id=None,
             notification_preview="Dry run: no cycle is due.",
@@ -132,12 +163,12 @@ def dry_run_once(
     if evaluation.requires_manual_approval:
         return DryRunResult(
             evaluation=evaluation,
+            activation=activation,
             preview=None,
             persisted_cycle_id=None,
             notification_preview="Dry run: missed cycle requires manual approval.",
         )
 
-    preview = preview_plan(config, ledger, adapter, now=evaluated_at)
     persisted_cycle_id = None
     if persist_simulation:
         ledger.create_cycle_with_orders(
@@ -155,11 +186,11 @@ def dry_run_once(
     )
     return DryRunResult(
         evaluation=evaluation,
+        activation=activation,
         preview=preview,
         persisted_cycle_id=persisted_cycle_id,
         notification_preview=notification_preview,
     )
-
 
 
 def live_run_once(
@@ -176,6 +207,11 @@ def live_run_once(
     evaluated_at = now or datetime.now(UTC)
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
+    activation = evaluate_activation(config, ledger, now=evaluated_at, adapter=adapter)
+    if not activation.activated:
+        raise LiveExecutionBlockedError(
+            f"program is waiting for activation: {activation.message}"
+        )
     if not config.safety.live_trading_enabled:
         raise LiveExecutionBlockedError("live_trading_enabled is false")
     if config.safety.kill_switch:
@@ -187,7 +223,9 @@ def live_run_once(
     ):
         raise LiveExecutionBlockedError("first live sell confirmation is required")
 
-    evaluation = evaluate_cycle(config, evaluated_at)
+    evaluation = evaluate_cycle(
+        config, evaluated_at, activation_time=activation.activated_at
+    )
     if evaluation.status is CycleStatus.NOT_DUE:
         raise LiveExecutionBlockedError("no cycle is due")
     if evaluation.requires_manual_approval:
@@ -277,6 +315,7 @@ def live_run_once(
 
     return LiveRunResult(
         evaluation=evaluation,
+        activation=activation,
         submitted_order_count=submitted,
         reconciliation=reconciliation,
         notification_preview=(

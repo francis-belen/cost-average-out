@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from cost_average_out.activation import evaluate_activation
 from cost_average_out.config import ConfigError, load_config
 from cost_average_out.cycle import (
     LiveExecutionBlockedError,
@@ -97,15 +98,22 @@ def schedule_status(
     try:
         validated = load_config(config)
         now = _parse_instant(at) if at is not None else datetime.now(UTC)
-        evaluation = evaluate_cycle(validated, now)
+        activation = evaluate_activation(validated, None, now=now, persist=False)
+        evaluation = (
+            evaluate_cycle(validated, now, activation_time=activation.activated_at)
+            if activation.activated
+            else None
+        )
     except (ConfigError, ValueError) as exc:
         typer.echo(f"Schedule evaluation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     if output is OutputFormat.JSON:
-        presenter.json(presenter.schedule_status_payload(validated, evaluation))
+        presenter.json(
+            presenter.schedule_status_payload(validated, evaluation, activation)
+        )
     else:
-        presenter.schedule_status(validated, evaluation)
+        presenter.schedule_status(validated, evaluation, activation)
 
 
 def _parse_instant(value: str) -> datetime:
@@ -160,7 +168,13 @@ def status(
         validated = load_config(config)
         ledger = Ledger(validated.database_path.expanduser())
         summary = ledger.summary()
-        evaluation = evaluate_cycle(validated, datetime.now(UTC))
+        now = datetime.now(UTC)
+        activation = evaluate_activation(validated, ledger, now=now, persist=False)
+        evaluation = (
+            evaluate_cycle(validated, now, activation_time=activation.activated_at)
+            if activation.activated
+            else None
+        )
     except (ConfigError, LedgerError, OSError, ValueError) as exc:
         typer.echo(f"Status unavailable: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -168,11 +182,13 @@ def status(
     if output is OutputFormat.JSON:
         presenter.json(
             presenter.status_payload(
-                validated, ledger.path, summary, evaluation, config
+                validated, ledger.path, summary, evaluation, activation, config
             )
         )
     else:
-        presenter.status(validated, ledger.path, summary, evaluation, config)
+        presenter.status(
+            validated, ledger.path, summary, evaluation, activation, config
+        )
 
 
 @app.command("snapshot-balances")
@@ -310,6 +326,10 @@ def run_once(
             help="Evaluate at an ISO-8601 instant; defaults to the current time.",
         ),
     ] = None,
+    output: Annotated[
+        OutputFormat,
+        typer.Option("--output", help="Output format."),
+    ] = OutputFormat.RICH,
 ) -> None:
     """Run one timer-friendly execution cycle."""
     if dry_run == live:
@@ -384,9 +404,15 @@ def run_once(
         raise typer.Exit(code=1) from exc
 
     if dry_run:
-        presenter.dry_run(validated, result)
+        if output is OutputFormat.JSON:
+            presenter.json(presenter.dry_run_payload(validated, result))
+        else:
+            presenter.dry_run(validated, result)
     else:
-        presenter.live_run(validated, live_result)
+        if output is OutputFormat.JSON:
+            presenter.json(presenter.live_run_payload(validated, live_result))
+        else:
+            presenter.live_run(validated, live_result)
 
 
 def _dry_run_notification_kind(summary: str) -> NotificationKind:

@@ -1,0 +1,20 @@
+[Unit]
+Description=Cost Average Out one-shot run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=costavgout
+Group=costavgout
+WorkingDirectory=/opt/cost-average-out
+EnvironmentFile=/etc/cost-average-out/cost-average-out.env
+ExecStart=/opt/cost-average-out/.venv/bin/cost-average-out run-once --dry-run --config /etc/cost-average-out/config.yaml
+# Production defaults to dry-run. Switching to --live is an intentional manual
+# deployment step after validation.
+# ExecStart=/opt/cost-average-out/.venv/bin/cost-average-out run-once --live --config /etc/cost-average-out/config.yaml
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cost-average-out

@@ -38,11 +38,15 @@ virtual environment, and install the package there. Then run:
 
 ```bash
 cd /opt/cost-average-out
+python -m venv .venv
+.venv/bin/python -m pip install -e .
 sudo deploy/install-staging.sh
 ```
 
-The installer creates the `costavgout` Linux user, creates required directories,
-installs systemd units, and preserves existing runtime config and secrets. If
+The installer must be run from `/opt/cost-average-out` and requires
+`.venv/bin/cost-average-out` to exist before it makes changes. It creates the
+`costavgout` Linux user, creates required directories, installs systemd units,
+and preserves existing runtime config and secrets. If
 `/etc/cost-average-out/config.yaml` does not exist, it copies
 `config.example.yaml` and sets `database_path` to
 `/var/lib/cost-average-out/cost_average_out.sqlite3`. If the secrets file does
@@ -55,6 +59,8 @@ service intentionally remains in dry-run mode.
 
 ```bash
 cd /opt/cost-average-out
+python -m venv .venv
+.venv/bin/python -m pip install -e .
 sudo deploy/install-production.sh
 ```
 

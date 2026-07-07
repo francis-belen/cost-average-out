@@ -17,6 +17,17 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ "$(readlink -f "${REPO_DIR}")" != "$(readlink -f "${APP_DIR}")" ]]; then
+  echo "This installer must be run from ${APP_DIR}." >&2
+  exit 1
+fi
+
+if [[ ! -x "${APP_DIR}/.venv/bin/cost-average-out" ]]; then
+  echo "Missing executable: ${APP_DIR}/.venv/bin/cost-average-out" >&2
+  echo "Create the venv and run from ${APP_DIR}: .venv/bin/python -m pip install -e ." >&2
+  exit 1
+fi
+
 if ! getent group "${APP_GROUP}" >/dev/null; then
   groupadd --system "${APP_GROUP}"
 fi
